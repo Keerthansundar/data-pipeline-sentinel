@@ -80,3 +80,22 @@ This document records key technical decisions, rationale, and consequences for P
   6. Kill switch & fail-safe: `AGENT_ENABLED=false` or a missing `OPENAI_API_KEY` bypasses LLM execution and forces safe escalation. Loop bounded by 8 tool calls.
 - **Rationale:** Section 7 and Section 8 require absolute guardrails ensuring LLM cannot execute side-effects, mutate pipeline state, or hallucinate fixes.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-010: Automated Fix Generation, Sandbox Isolation, PR Dry-Run, and Notification Engine (Phase 5)
+- **Decision:** Implement deterministic automated fix generation, isolated sandbox verification, PR dispatch, and email routing:
+  1. **Minimal Diff Round-Trip Patcher:** Use `ruamel.yaml` in `responder/patcher.py` to preserve comments, indentation, and structure when applying `append_unique` patches to copies of `config/silver_rules.yml`.
+  2. **Isolated Sandbox Verification:** Execute Silver transformations in `responder/sandbox.py` using Bronze source data from the failed batch, writing outputs strictly to `data/sandbox/<incident_id>/` (never modifying production Delta Lake tables). Enforce five deterministic quality checks:
+     - No unhandled runtime exceptions.
+     - Unparseable date ratio within allowable threshold (`<= max_unparseable_ratio`).
+     - Conservation of rows: `rows_out + rows_quarantined == rows_in`.
+     - Revenue reconciliation: `abs(raw_revenue - (silver_revenue + quarantine_revenue)) / raw_revenue <= 0.001`.
+     - Output schema matches contract (`REQUIRED_SILVER_COLUMNS`).
+  3. **Dual-Mode PR Dispatch:** Controlled by `PR_MODE` (`dry_run` by default):
+     - `dry_run`: Writes structured markdown audit preview to `data/pr_previews/<incident_id>.md` and unified diff to `<incident_id>.diff`.
+     - `github`: Creates branch `autofix/<incident_id>-<slug>` from base branch head, commits the patched rules file, and opens a pull request with full audit body via PyGithub. The agent cannot merge and cannot push to `main`.
+  4. **Redacted HTML Notifications:** Dispatches structured HTML emails to Mailpit SMTP sink (`responder/notify.py`) containing Evidence (with tool citations), Reasoning, Decision, Recommended action, impact, and PR link or preview path. All emails and logs scrub secrets and PII via `responder/redact.py`.
+  5. **Fail-Safe Orchestration (`incident_responder` DAG):** Wires 9 tasks in `dags/incident_responder.py`: `claim_incident`, `run_diagnosis_agent`, `validate_diagnosis`, `enforce_patch_policy`, `run_sandbox_verification`, `route_outcome`, `open_fix_pull_request`, `send_incident_email`, `record_audit`. The DAG is configured with `schedule="* * * * *"`, `max_active_runs=1`, `catchup=False`, and `is_paused_upon_creation=True`. Short-circuits with `AirflowSkipException` when no `OPEN` incident exists. Any exception, schema rejection, policy violation, or sandbox failure routes deterministically to human escalation.
+- **Rationale:** Fulfills Section 7 and Section 11 of the project brief. Ensures fixes are verified in a clean sandbox before proposing pull requests, while guaranteeing human-in-the-loop control and absolute fail-safe fallback to engineer escalation.
+- **Date:** 2026-11-21

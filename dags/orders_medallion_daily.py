@@ -181,6 +181,27 @@ def _run_freshness_task(**context: Any) -> None:
 def _run_resolve_incidents_task(**context: Any) -> None:
     batch_date = _get_batch_date(context)
     resolved = resolve_incidents_for_batch(batch_date)
+    # Ensure any IN_PROGRESS, PR_OPENED, or ESCALATED incidents for this batch date are also marked RESOLVED
+    from pipeline.observability import _get_db_connection
+
+    conn = _get_db_connection()
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE incidents
+                        SET status = 'RESOLVED', updated_at = CURRENT_TIMESTAMP
+                        WHERE batch_date = %s AND status != 'RESOLVED';
+                        """,
+                        (batch_date,),
+                    )
+                    extra_resolved = cur.rowcount
+                    resolved += extra_resolved
+        except Exception as exc:
+            logger.warning("Error updating remaining incidents for batch %s: %s", batch_date, exc)
+
     logger.info("resolve_incidents completed for batch %s: %d resolved", batch_date, resolved)
 
 

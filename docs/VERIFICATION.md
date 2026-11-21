@@ -200,4 +200,51 @@ tests\test_simulator.py ......                                           [100%]
 - **API Failure:** Fail-safe escalation on LLM errors.
 - **Kill Switch:** `AGENT_ENABLED=false` or missing `OPENAI_API_KEY` forces escalation without calling LLM.
 
+---
+
+## Phase 5 Verification: Fix and Notify (Completed 2026-11-21)
+
+### 1. Code-Only Verification & Linting
+```
+python -m ruff check .
+All checks passed!
+
+python -m ruff format --check .
+62 files already formatted
+```
+
+### 2. Unit Tests Across Host & Docker Container
+```
+python -m pytest tests/ -m "not spark"
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\Users\hp\Desktop\pipeline-sentinel
+configfile: pyproject.toml
+plugins: anyio-4.14.2, Faker-36.1.1, platformdirs-4.13.6
+collected 43 items / 1 deselected / 42 selected
+
+tests\test_agent.py ...........                                          [ 26%]
+tests\test_fix_and_notify.py ..........                                  [ 50%]
+tests\test_guardrails.py ..........                                      [ 73%]
+tests\test_logging.py ..                                                 [ 78%]
+tests\test_pipeline.py ...                                               [ 85%]
+tests\test_simulator.py ......                                           [100%]
+
+================= 42 passed, 1 deselected, 1 warning in 1.65s =================
+```
+
+### 3. Checkpoint Status (Phase 5)
+- [x] Patcher: ruamel.yaml round-trip clean formatting, `append_unique` only, minimal diffs (`responder/patcher.py`).
+- [x] Sandbox: Silver transform on failed Bronze data in `data/sandbox/<id>/`, 5 validation checks (`responder/sandbox.py`).
+- [x] PR Dispatch: Dual-mode `PR_MODE=dry_run` (markdown previews) and `PR_MODE=github` (PyGithub branch + PR, no main/merge) (`responder/pr.py`).
+- [x] Notifications: HTML emails with Evidence, Reasoning, Decision, Recommended action, redaction, and SMTP dispatch (`responder/notify.py`).
+- [x] Audit Record: Persistence into `incident_diagnosis_audit` (`responder/audit.py`).
+- [x] Orchestration: 9-task DAG wired with `AirflowSkipException` short-circuiting and fail-safe escalation (`dags/incident_responder.py`).
+- [x] Human Simulation: `make apply-fix INCIDENT=<id>` and `make rerun BATCH=<date>`.
+- [x] Resolution: `resolve_incidents` in `orders_medallion_daily` updates non-RESOLVED incidents to `RESOLVED`.
+- [x] Incident Investigation CLI: `responder/run_agent_once.py` formats diagnosis, citation check, policy result, timeline, and tokens.
+- [x] Failure Mode Runner: `tests/run_failure_modes_demo.py` supports `--mode <failure_mode>`.
+- [x] Compose Environment: Container environment updated with `PR_MODE`, `AGENT_ENABLED`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `GITHUB_*`, `SMTP_*`.
+
+
 

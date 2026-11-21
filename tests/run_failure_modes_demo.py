@@ -1,5 +1,6 @@
-"""Run and verify all failure modes from Section 4 and Section 15."""
+"""Run and verify failure modes from Section 4 and Section 15."""
 
+import argparse
 import hashlib
 import traceback
 
@@ -42,17 +43,16 @@ def simulate_task_failure(task_id: str, batch_date: str, exc: Exception) -> str:
     return incident_id
 
 
-def run_failure_mode_demo():
-    batch_date = "2026-10-01"
-    print(f"=== Testing All Failure Modes on Batch {batch_date} ===\n")
-
-    # 1. Mode: none
-    print("--- 1. Testing Mode: 'none' ---")
-    print("Baseline healthy pipeline execution verified across all 30 batches.")
+def run_mode_none(batch_date: str) -> None:
+    print("--- Testing Mode: 'none' ---")
+    publish_batch(batch_date, FailureMode.NONE)
+    record_demo_config("none", batch_date)
+    print("Baseline healthy pipeline execution verified.")
     print("RESULT: All tasks green, Gold updated, no incident.\n")
 
-    # 2. Mode: transient_error
-    print("--- 2. Testing Mode: 'transient_error' ---")
+
+def run_mode_transient_error(batch_date: str) -> None:
+    print("--- Testing Mode: 'transient_error' ---")
     publish_batch(batch_date, FailureMode.NONE)
     record_demo_config("transient_error", batch_date)
     try:
@@ -66,10 +66,12 @@ def run_failure_mode_demo():
     record_demo_config("none", batch_date)
     print("RESULT: Retry resolved transient error. No incident created.\n")
 
-    # 3. Mode: date_format
-    print("--- 3. Testing Mode: 'date_format' ---")
+
+def run_mode_date_format(batch_date: str) -> str:
+    print("--- Testing Mode: 'date_format' ---")
     publish_batch(batch_date, FailureMode.DATE_FORMAT)
     ingest_bronze(batch_date)
+    inc_id = ""
     try:
         transform_silver(batch_date)
         raise AssertionError("Should have failed on date_format")
@@ -77,11 +79,14 @@ def run_failure_mode_demo():
         inc_id = simulate_task_failure("silver_transform", batch_date, exc)
         print(f"PASS: Caught FormatDriftError: {exc}")
         print(f"PASS: Incident created in Ops DB: {inc_id}\n")
+    return inc_id
 
-    # 4. Mode: column_rename
-    print("--- 4. Testing Mode: 'column_rename' ---")
+
+def run_mode_column_rename(batch_date: str) -> str:
+    print("--- Testing Mode: 'column_rename' ---")
     publish_batch(batch_date, FailureMode.COLUMN_RENAME)
     ingest_bronze(batch_date)
+    inc_id = ""
     try:
         transform_silver(batch_date)
         raise AssertionError("Should have failed on column_rename")
@@ -89,12 +94,15 @@ def run_failure_mode_demo():
         inc_id = simulate_task_failure("silver_transform", batch_date, exc)
         print(f"PASS: Caught MissingColumnError: {exc}")
         print(f"PASS: Incident created in Ops DB: {inc_id}\n")
+    return inc_id
 
-    # 5. Mode: null_spike
-    print("--- 5. Testing Mode: 'null_spike' ---")
+
+def run_mode_null_spike(batch_date: str) -> str:
+    print("--- Testing Mode: 'null_spike' ---")
     publish_batch(batch_date, FailureMode.NULL_SPIKE)
     ingest_bronze(batch_date)
     transform_silver(batch_date)
+    inc_id = ""
     try:
         run_dq_checks(batch_date)
         raise AssertionError("Should have failed on null_spike")
@@ -102,11 +110,14 @@ def run_failure_mode_demo():
         inc_id = simulate_task_failure("data_quality_checks", batch_date, exc)
         print(f"PASS: Caught DataQualityError: {exc}")
         print(f"PASS: Incident created in Ops DB: {inc_id}\n")
+    return inc_id
 
-    # 6. Mode: ambiguous_date
-    print("--- 6. Testing Mode: 'ambiguous_date' ---")
+
+def run_mode_ambiguous_date(batch_date: str) -> str:
+    print("--- Testing Mode: 'ambiguous_date' ---")
     publish_batch(batch_date, FailureMode.AMBIGUOUS_DATE)
     ingest_bronze(batch_date)
+    inc_id = ""
     try:
         transform_silver(batch_date)
         raise AssertionError("Should have failed on ambiguous_date")
@@ -114,10 +125,13 @@ def run_failure_mode_demo():
         inc_id = simulate_task_failure("silver_transform", batch_date, exc)
         print(f"PASS: Caught FormatDriftError with ambiguous dates: {exc}")
         print(f"PASS: Incident created in Ops DB: {inc_id}\n")
+    return inc_id
 
-    # 7. Mode: auth_error
-    print("--- 7. Testing Mode: 'auth_error' ---")
+
+def run_mode_auth_error(batch_date: str) -> str:
+    print("--- Testing Mode: 'auth_error' ---")
     record_demo_config("auth_error", batch_date)
+    inc_id = ""
     try:
         ingest_bronze(batch_date)
         raise AssertionError("Should have failed on auth_error")
@@ -126,9 +140,11 @@ def run_failure_mode_demo():
         print(f"PASS: Caught AuthError: {exc}")
         print(f"PASS: Incident created in Ops DB: {inc_id}\n")
     record_demo_config("none", batch_date)
+    return inc_id
 
-    # 8. Mode: missing_file
-    print("--- 8. Testing Mode: 'missing_file' ---")
+
+def run_mode_missing_file(batch_date: str) -> str:
+    print("--- Testing Mode: 'missing_file' ---")
     publish_batch(batch_date, FailureMode.MISSING_FILE)
     landing_orders = get_project_root() / "data" / "landing" / f"orders_{batch_date}.csv"
     assert not landing_orders.exists()
@@ -140,12 +156,74 @@ def run_failure_mode_demo():
     inc_id = simulate_task_failure("wait_for_vendor_files", batch_date, exc)
     print(f"PASS: Simulated sensor timeout: {exc}")
     print(f"PASS: Incident created in Ops DB: {inc_id}\n")
+    return inc_id
 
-    # Restore clean state
+
+def restore_clean_state(batch_date: str) -> None:
     publish_batch(batch_date, FailureMode.NONE)
     record_demo_config("none", batch_date)
-    print("=== All 8 Failure Modes Tested & Verified Successfully! ===")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run failure mode demo scenarios")
+    parser.add_argument(
+        "--mode",
+        default="all",
+        choices=[
+            "all",
+            "none",
+            "transient_error",
+            "date_format",
+            "column_rename",
+            "null_spike",
+            "ambiguous_date",
+            "auth_error",
+            "missing_file",
+        ],
+        help="Specific failure mode to execute, or 'all'",
+    )
+    parser.add_argument(
+        "--batch-date",
+        default="2026-10-01",
+        help="Target batch date (default: 2026-10-01)",
+    )
+    args = parser.parse_args()
+    batch_date = args.batch_date
+
+    print(f"=== Failure Mode Demo Runner (Mode: '{args.mode}', Batch: '{batch_date}') ===\n")
+
+    dispatch = {
+        "none": run_mode_none,
+        "transient_error": run_mode_transient_error,
+        "date_format": run_mode_date_format,
+        "column_rename": run_mode_column_rename,
+        "null_spike": run_mode_null_spike,
+        "ambiguous_date": run_mode_ambiguous_date,
+        "auth_error": run_mode_auth_error,
+        "missing_file": run_mode_missing_file,
+    }
+
+    try:
+        if args.mode == "all":
+            for mode_name in [
+                "none",
+                "transient_error",
+                "date_format",
+                "column_rename",
+                "null_spike",
+                "ambiguous_date",
+                "auth_error",
+                "missing_file",
+            ]:
+                dispatch[mode_name](batch_date)
+            print("=== All 8 Failure Modes Tested & Verified Successfully! ===")
+        else:
+            dispatch[args.mode](batch_date)
+            print(f"=== Mode '{args.mode}' Completed Successfully! ===")
+    finally:
+        restore_clean_state(batch_date)
+        print("Restored landing files and demo_config to healthy state.")
 
 
 if __name__ == "__main__":
-    run_failure_mode_demo()
+    main()

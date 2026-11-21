@@ -25,13 +25,18 @@ x-airflow-common:
     AGENT_ENABLED: ${AGENT_ENABLED:-true}
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    GITHUB_REPO: ${GITHUB_REPO:-}
+    GITHUB_BASE_BRANCH: ${GITHUB_BASE_BRANCH:-main}
     OPS_DB_HOST: ops-postgres
     OPS_DB_PORT: 5432
     OPS_DB_NAME: ops
     OPS_DB_USER: ops_user
     OPS_DB_PASSWORD: ops_password
-    SMTP_HOST: mailpit
-    SMTP_PORT: 1025
+    SMTP_HOST: ${SMTP_HOST:-mailpit}
+    SMTP_PORT: ${SMTP_PORT:-1025}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-engineer@example.com}
     ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-pipeline-sentinel@example.com}
     SPARK_LOCAL_IP: 127.0.0.1
