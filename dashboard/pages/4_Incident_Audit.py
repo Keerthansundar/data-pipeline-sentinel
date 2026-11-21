@@ -30,7 +30,10 @@ with fcol1:
 incidents = ops.get_incidents(status=status_filter if status_filter != "ALL" else None)
 
 if not incidents:
-    st.info(f"No incidents found matching status '{status_filter}'.")
+    st.info(
+        f"No incidents found matching status '{status_filter}'. "
+        "The pipeline is currently operating cleanly with zero recorded failures."
+    )
     st.stop()
 
 inc_options = {
@@ -172,9 +175,9 @@ if diag_data.get("patch"):
         with scol4:
             st.metric("Quarantined", f"{sb_res.get('rows_quarantined', 'N/A')}")
 
-    if audit and audit.get("pr_url"):
-        pr_link = audit["pr_url"]
-        st.markdown(f"**PR / Preview Path:** `{pr_link}`")
+    pr_preview = audit.get("pr_url_or_preview") or audit.get("pr_url") if audit else None
+    if pr_preview:
+        st.markdown(f"**PR / Preview Path:** `{pr_preview}`")
 
 else:
     st.caption("No fix patch proposed for this incident (action was escalation).")

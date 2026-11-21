@@ -178,6 +178,12 @@ def ingest_bronze(
         customers_size_bytes,
         duration_s,
     )
+    logger.info(
+        "Bronze customer rows ingested: count=%d, bytes=%d (batch=%s)",
+        customers_count,
+        customers_size_bytes,
+        batch_date,
+    )
 
     record_pipeline_run(
         dag_run_id=dag_run_id,
@@ -185,7 +191,7 @@ def ingest_bronze(
         batch_date=batch_date,
         status="SUCCESS",
         rows_in=orders_count,
-        rows_out=orders_count + customers_count,
+        rows_out=orders_count,
         started_at=start_time,
         ended_at=end_time,
     )

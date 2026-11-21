@@ -118,3 +118,19 @@ This document records key technical decisions, rationale, and consequences for P
   6. **Resilient Empty State Handling:** All library adapters and UI views handle absent or unmaterialized data gracefully without raising exceptions.
 - **Rationale:** Fulfills Section 9 of the project brief. Provides live operational visibility for operators, business stakeholders, and AI incident auditors.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-012: Dashboard Real-Schema Alignment, Bronze Order Accounting, and Container Hot-Reloading
+- **Decision:**
+  1. **Bronze Ingest Accounting:** Update `pipeline/bronze.py` so `record_pipeline_run` records `rows_in=orders_count` and `rows_out=orders_count` to ensure uniform entity accounting (orders only) across `bronze_ingest` and `silver_transform`. The 386 extra rows previously observed in `rows_out` (5,386 vs 5,000) corresponded directly to customer records (`customers_count = 386`) from `customers_2026-10-02.json`. Customer row counts and byte sizes are now logged in a dedicated structured log line per Section 5A.
+  2. **Gold Real Schema Alignment:** In `dashboard/lib/delta_reader.py` and `dashboard/pages/2_Revenue_Dashboard.py`, align readers with the actual columns written by `pipeline/gold.py`:
+     - `daily_revenue`: `_batch_date`, `total_revenue`, `order_count`, `avg_order_value`. Expose `order_date` and `total_orders` aliases, sort by date, and compute `total_orders` and `avg_order_value` from `order_count`.
+     - `revenue_by_channel`: `_batch_date`, `channel`, `channel_revenue`, `order_count`. Added `read_gold_channel_revenue()`.
+     - `customer_summary`: `customer_id`, `name`, `segment`, `_batch_date`, `customer_revenue`, `total_orders`. Updated path from `customer_revenue` to `customer_summary` with backwards-compatible aliases (`customer_name`, `lifetime_revenue`, `lifetime_orders`).
+     - Added defensive column checking and fallback messages so readers never crash on empty states or missing fields.
+  3. **Live Run Monitor Task ID Formatting:** Removed string interpolation backticks (`f"`{t['Task ID']}`"`) around Task IDs in `dashboard/pages/1_Live_Run_Monitor.py` table.
+  4. **Ops DB Audit Column Sync:** Updated `dashboard/lib/ops_db.py` and `responder/repository.py` to use `pr_url_or_preview` (matching `ops/sql/001_ops_schema.sql`).
+  5. **Streamlit Development Hot-Reloading:** Updated `docker-compose.yml` to bind-mount `./dashboard`, `./pipeline:ro`, `./responder:ro`, and `./config:ro` into `/app` so subsequent dashboard or responder modifications reflect immediately on browser page reload without requiring container rebuilds.
+- **Rationale:** Resolves runtime KeyError exceptions on real Gold data, ensures metrics accurately reflect business reality, eliminates backtick noise in tables, and improves developer velocity.
+- **Date:** 2026-11-21

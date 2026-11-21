@@ -17,11 +17,12 @@
   - Read-only tools, diagnosis schema, Pydantic validation, policy enforcement, and 12 Section 8 guardrails verified (32 unit tests pass).
 - **Phase 5 (Fix Generation, Sandbox, PR, & Notifications):** 100% COMPLETE & VERIFIED (commit `d50ec5f`).
   - Minimal diff YAML patcher, isolated sandbox transform, dual-mode PR dispatch, HTML notification email engine, and 9-task incident responder DAG.
-- **Phase 6 (Streamlit Dashboard):** 100% COMPLETE & VERIFIED (commit `a2120ce`).
-  - 5-page operational monitor: Live Run Monitor (Task Instances view, colored pipeline graph, search/filter, logs, auto-refresh), Revenue Dashboard (zero-JVM Delta Lake reader), Pipeline Health, Incident Audit, Demo Control.
+- **Phase 6 (Streamlit Dashboard):** 100% COMPLETE & VERIFIED (commit `a2120ce`, updated with real Gold schemas & hot-reload mounts).
+  - 5-page operational monitor: Live Run Monitor (Task Instances view without backticks, colored pipeline graph, search/filter, logs, auto-refresh), Revenue Dashboard (real Gold schemas `daily_revenue`, `revenue_by_channel`, `customer_summary` via zero-JVM Delta Lake reader), Pipeline Health, Incident Audit (`pr_url_or_preview` column alignment), Demo Control.
 - **Phase 7 (Polish & Documentation):** 100% COMPLETE & VERIFIED.
   - Comprehensive `README.md` (Section 13) with Mermaid architecture & sequence diagrams, quickstart, UI tour, demo script, and configuration reference.
   - Detailed `docs/architecture.md`, `docs/runbook.md`, and automated `.github/workflows/ci.yml`.
+  - Bronze metric fix: `bronze_ingest` records orders consistently across `rows_in` and `rows_out` (5,000 orders), recording customer counts in dedicated structured logs.
 
 ### Checkpoint Milestones
 - [x] Phase 0 Checkpoint: Foundation & Linting

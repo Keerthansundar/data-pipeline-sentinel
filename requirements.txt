@@ -1,6 +1,7 @@
 # Core project dependencies (pinned)
 pydantic==2.10.6
 ruamel.yaml==0.18.10
+PyYAML==6.0.4
 Faker==36.1.1
 psycopg[binary]==3.2.4
 SQLAlchemy==2.0.38

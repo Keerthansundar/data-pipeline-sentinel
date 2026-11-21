@@ -8,6 +8,7 @@ import pandas as pd
 from dashboard.lib.airflow_meta import AirflowMetaAdapter
 from dashboard.lib.delta_reader import (
     get_revenue_kpis,
+    read_gold_channel_revenue,
     read_gold_customer_revenue,
     read_gold_daily_revenue,
 )
@@ -115,6 +116,7 @@ def test_airflow_meta_adapter_mock():
         ti = adapter.get_task_instances("orders_medallion_daily", "manual__1")
         assert len(ti) == 1
         assert ti[0]["Task ID"] == "silver_transform"
+        assert "`" not in ti[0]["Task ID"]  # Ensure no backticks in raw task ID
         assert ti[0]["Map Index"] == "-"
         assert ti[0]["Duration"] == "42.50s"
         assert ti[0]["State"] == "success"
@@ -141,6 +143,12 @@ def test_ops_db_adapter_mock():
     ]
     mock_cur.fetchone.side_effect = [
         {"id": "INC-1", "status": "OPEN", "error_message": "drift"},
+        {
+            "incident_id": "INC-1",
+            "diagnosis": "{}",
+            "pr_url_or_preview": "data/pr_previews/INC-1.md",
+            "final_action": "pr_opened",
+        },
         {"failure_mode": "date_format", "target_batch_date": "2026-10-01"},
     ]
 
@@ -158,6 +166,10 @@ def test_ops_db_adapter_mock():
         inc = adapter.get_incident_detail("INC-1")
         assert inc["id"] == "INC-1"
 
+        audit = adapter.get_incident_audit("INC-1")
+        assert audit is not None
+        assert audit["pr_url_or_preview"] == "data/pr_previews/INC-1.md"
+
         cfg = adapter.get_demo_config()
         assert cfg["failure_mode"] == "date_format"
 
@@ -170,6 +182,11 @@ def test_delta_reader_empty_state():
         assert "total_revenue" in df_daily.columns
         assert df_daily.empty
 
+        df_channel = read_gold_channel_revenue()
+        assert isinstance(df_channel, pd.DataFrame)
+        assert "channel" in df_channel.columns
+        assert df_channel.empty
+
         df_cust = read_gold_customer_revenue()
         assert isinstance(df_cust, pd.DataFrame)
         assert "lifetime_revenue" in df_cust.columns
@@ -181,20 +198,72 @@ def test_delta_reader_empty_state():
         assert kpis["avg_order_value"] == 0.0
 
 
-def test_delta_reader_kpis_calculation():
-    """Verify KPI calculation from mock Gold data."""
-    mock_df = pd.DataFrame(
+def test_delta_reader_real_schema_daily_revenue():
+    """Verify daily_revenue reader and KPI calculation with real Gold schema columns."""
+    # Real columns written by pipeline/gold.py: _batch_date, total_revenue, order_count, avg_order_value
+    real_gold_df = pd.DataFrame(
         {
-            "order_date": ["2026-10-01", "2026-10-02"],
-            "channel": ["web", "mobile"],
-            "total_orders": [100, 200],
-            "total_revenue": [5000.0, 15000.0],
-            "avg_order_value": [50.0, 75.0],
+            "_batch_date": ["2026-10-01", "2026-10-02"],
+            "total_revenue": [1267351.07, 1254320.50],
+            "order_count": [4969, 4974],
+            "avg_order_value": [255.05, 252.17],
         }
     )
 
-    with patch("dashboard.lib.delta_reader._load_delta_table", return_value=mock_df):
+    with patch("dashboard.lib.delta_reader._load_delta_table", return_value=real_gold_df):
+        df = read_gold_daily_revenue()
+        assert "order_date" in df.columns  # Aliased from _batch_date
+        assert "total_orders" in df.columns  # Aliased from order_count
+        assert df["order_date"].iloc[0] == "2026-10-01"
+
         kpis = get_revenue_kpis()
-        assert kpis["total_revenue"] == 20000.0
-        assert kpis["total_orders"] == 300
-        assert kpis["avg_order_value"] == 20000.0 / 300.0
+        assert kpis["total_revenue"] == 1267351.07 + 1254320.50
+        assert kpis["total_orders"] == 4969 + 4974
+        assert kpis["total_orders"] > 0
+        expected_aov = (1267351.07 + 1254320.50) / (4969 + 4974)
+        assert abs(kpis["avg_order_value"] - expected_aov) < 0.01
+
+
+def test_delta_reader_real_schema_channel_revenue():
+    """Verify revenue_by_channel reader with real Gold schema columns."""
+    real_channel_df = pd.DataFrame(
+        {
+            "_batch_date": ["2026-10-01", "2026-10-01", "2026-10-01"],
+            "channel": ["web", "mobile", "store"],
+            "channel_revenue": [500000.0, 400000.0, 367351.07],
+            "order_count": [2000, 1600, 1369],
+        }
+    )
+
+    with patch("dashboard.lib.delta_reader._load_delta_table", return_value=real_channel_df):
+        df = read_gold_channel_revenue()
+        assert not df.empty
+        assert "channel" in df.columns
+        assert "channel_revenue" in df.columns
+        assert "total_revenue" in df.columns  # Alias
+        assert "total_orders" in df.columns  # Alias
+        assert df["channel_revenue"].sum() == 1267351.07
+
+
+def test_delta_reader_real_schema_customer_summary():
+    """Verify customer_summary reader with real Gold schema columns."""
+    real_cust_df = pd.DataFrame(
+        {
+            "customer_id": ["CUST-001", "CUST-002"],
+            "name": ["Alice Smith", "Bob Jones"],
+            "segment": ["Enterprise", "SMB"],
+            "_batch_date": ["2026-10-01", "2026-10-01"],
+            "customer_revenue": [1500.00, 850.50],
+            "total_orders": [5, 3],
+        }
+    )
+
+    with patch("dashboard.lib.delta_reader._load_delta_table", return_value=real_cust_df):
+        df = read_gold_customer_revenue()
+        assert not df.empty
+        assert "customer_id" in df.columns
+        assert "name" in df.columns
+        assert "customer_name" in df.columns  # Alias
+        assert "lifetime_revenue" in df.columns  # Alias
+        assert "lifetime_orders" in df.columns  # Alias
+        assert df["customer_revenue"].sum() == 2350.50

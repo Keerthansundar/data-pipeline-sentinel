@@ -50,6 +50,61 @@ def test_data_quality_error_fields():
     assert "max_null_rate:amount" in str(err)
 
 
+def test_bronze_record_pipeline_run_orders_counts_only():
+    """Verify Bronze ingest logs rows_in and rows_out counting the same entity (orders)."""
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    mock_pyspark = MagicMock()
+    with patch.dict(
+        sys.modules,
+        {
+            "pyspark": mock_pyspark,
+            "pyspark.sql": mock_pyspark.sql,
+            "pyspark.sql.functions": mock_pyspark.sql.functions,
+        },
+    ):
+        from pipeline.bronze import ingest_bronze
+
+        recorded_calls = []
+
+        def mock_record_pipeline_run(**kwargs):
+            recorded_calls.append(kwargs)
+
+        mock_spark = MagicMock()
+        mock_orders_df = MagicMock()
+        mock_orders_df.count.return_value = 5000
+        mock_orders_df.schema.fields = []
+
+        mock_cust_df = MagicMock()
+        mock_cust_df.count.return_value = 386
+        mock_cust_df.schema.fields = []
+
+        mock_spark.read.format.return_value.option.return_value.option.return_value.load.return_value.withColumn.return_value.withColumn.return_value.withColumn.return_value.coalesce.return_value.cache.return_value = mock_orders_df
+        mock_spark.read.json.return_value.withColumn.return_value.withColumn.return_value.withColumn.return_value.coalesce.return_value.cache.return_value = mock_cust_df
+
+        with (
+            patch("pipeline.bronze.get_spark_session", return_value=mock_spark),
+            patch("pipeline.bronze.check_demo_failure_mode", return_value="none"),
+            patch("pipeline.bronze.record_pipeline_run", side_effect=mock_record_pipeline_run),
+            patch("pipeline.bronze.record_schema_snapshot"),
+            patch("pathlib.Path.exists", return_value=True),
+            patch("pathlib.Path.stat", return_value=MagicMock(st_size=1024)),
+            patch("pathlib.Path.mkdir"),
+        ):
+            result = ingest_bronze("2026-10-02")
+            assert result["orders_rows"] == 5000
+            assert result["customers_rows"] == 386
+
+            # Check recorded pipeline run
+            assert len(recorded_calls) == 1
+            call_kwargs = recorded_calls[0]
+            assert call_kwargs["rows_in"] == 5000
+            # Crucial fix: rows_out must equal orders_count (5000), NOT orders + customers (5386)
+            assert call_kwargs["rows_out"] == 5000
+            assert call_kwargs["status"] == "SUCCESS"
+
+
 @pytest.mark.spark
 def test_spark_pipeline_idempotency_and_silver():
     """Verify bronze -> silver -> dq -> gold execution and idempotency."""

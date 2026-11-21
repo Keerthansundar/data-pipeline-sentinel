@@ -323,7 +323,7 @@ class OpsRepository:
                         """
                         INSERT INTO incident_diagnosis_audit (
                             incident_id, diagnosis, validation_results, policy_results,
-                            sandbox_results, final_action, pr_url, email_status,
+                            sandbox_results, final_action, pr_url_or_preview, email_status,
                             model, prompt_tokens, completion_tokens, created_at
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP);
                         """,

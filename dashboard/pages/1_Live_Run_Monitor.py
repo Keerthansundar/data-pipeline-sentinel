@@ -127,7 +127,7 @@ def render_live_monitor():
                 pill = render_status_pill(t["State"])
                 display_rows.append(
                     {
-                        "Task ID": f"`{t['Task ID']}`",
+                        "Task ID": t["Task ID"],
                         "Map Index": t["Map Index"],
                         "State": pill,
                         "Start Date": t["Start Date"],
