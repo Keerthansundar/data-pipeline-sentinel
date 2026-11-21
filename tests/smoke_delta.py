@@ -1,6 +1,5 @@
 """Smoke test for PySpark and Delta Lake inside Airflow container."""
 
-from delta import configure_spark_with_delta_pip
 import pyspark
 
 
@@ -12,10 +11,12 @@ def test_spark_delta_smoke():
         .config("spark.driver.memory", "1g")
         .config("spark.sql.shuffle.partitions", "1")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
     )
 
-    spark = configure_spark_with_delta_pip(builder).getOrCreate()
+    spark = builder.getOrCreate()
 
     data = [(1, "smoke_test_pass"), (2, "delta_lake_ready")]
     df = spark.createDataFrame(data, ["id", "status"])

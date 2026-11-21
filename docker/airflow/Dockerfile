@@ -20,3 +20,7 @@ USER airflow
 # Copy airflow-specific requirements and install
 COPY docker/airflow/requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
+
+# Copy pre-downloaded Delta Lake JARs directly into PySpark's jars directory
+# Eliminates runtime Maven/Ivy resolution, network dependency, and JRE trustAnchor issues
+COPY --chown=airflow:root docker/airflow/jars/*.jar /home/airflow/.local/lib/python3.13/site-packages/pyspark/jars/

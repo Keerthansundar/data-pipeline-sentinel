@@ -36,3 +36,10 @@ This document records key technical decisions, rationale, and consequences for P
 - **Decision:** In `docker/airflow/requirements.txt`, install PySpark, Delta Lake, Faker, PyGithub, and Pytest on top of the official `apache/airflow:3.4.0` image, while letting Airflow maintain its internal SQLAlchemy, Pydantic, and Psycopg dependencies.
 - **Rationale:** Airflow 3.4.0 enforces strict internal constraints on SQLAlchemy (>=2.0.50) and Pydantic (>=2.11.0). Forcing older sub-minor releases causes internal Airflow scheduler and API server startup crashes.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-006: Pre-bundled Delta Lake JARs in Custom Airflow Image
+- **Decision:** Download `delta-spark_2.12-3.3.0.jar` and `delta-storage-3.3.0.jar` directly into PySpark's `jars/` directory during Docker image build.
+- **Rationale:** Runtime resolution of Delta JARs via `spark.jars.packages` (Apache Ivy) fails in headless container environments when JRE keystores lack external trust anchors (`trustAnchors parameter must be non-empty`) and introduces network latency and flakiness on Spark startup. Pre-bundling certified JARs makes PySpark sessions 100% offline, zero-network, and fast to initialize.
+- **Date:** 2026-11-21

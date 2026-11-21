@@ -92,8 +92,8 @@ services:
 
   airflow-init:
     <<: *airflow-common
+    entrypoint: /bin/bash
     command:
-      - /bin/bash
       - -c
       - |
         mkdir -p /opt/airflow/logs /opt/airflow/dags
