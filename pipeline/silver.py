@@ -108,7 +108,9 @@ def transform_silver(
         remaining = parsed_s.isna() & ~date_series.isin(["", "None", "nan"])
         if not remaining.any():
             break
-        parsed_s[remaining] = pd.to_datetime(date_series[remaining], format=fmt, errors="coerce")
+        parsed_s[remaining] = pd.to_datetime(
+            date_series[remaining], format=fmt, errors="coerce"
+        )
 
     parse_success = parsed_s.notna()
     parsed_dates = parsed_s.dt.strftime("%Y-%m-%d").where(parse_success, None)
@@ -117,7 +119,9 @@ def transform_silver(
     unparseable_mask = ~parse_success
     unparseable_count = int(unparseable_mask.sum())
     unparseable_ratio = (
-        float(unparseable_count / total_valid_date_targets) if total_valid_date_targets > 0 else 0.0
+        float(unparseable_count / total_valid_date_targets)
+        if total_valid_date_targets > 0
+        else 0.0
     )
 
     bad_samples = [
