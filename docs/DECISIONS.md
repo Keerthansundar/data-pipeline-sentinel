@@ -99,3 +99,22 @@ This document records key technical decisions, rationale, and consequences for P
   5. **Fail-Safe Orchestration (`incident_responder` DAG):** Wires 9 tasks in `dags/incident_responder.py`: `claim_incident`, `run_diagnosis_agent`, `validate_diagnosis`, `enforce_patch_policy`, `run_sandbox_verification`, `route_outcome`, `open_fix_pull_request`, `send_incident_email`, `record_audit`. The DAG is configured with `schedule="* * * * *"`, `max_active_runs=1`, `catchup=False`, and `is_paused_upon_creation=True`. Short-circuits with `AirflowSkipException` when no `OPEN` incident exists. Any exception, schema rejection, policy violation, or sandbox failure routes deterministically to human escalation.
 - **Rationale:** Fulfills Section 7 and Section 11 of the project brief. Ensures fixes are verified in a clean sandbox before proposing pull requests, while guaranteeing human-in-the-loop control and absolute fail-safe fallback to engineer escalation.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-011: Multi-Page Streamlit Observability Suite and Direct Delta Lake Reader (Phase 6)
+- **Decision:** Implement multi-page Streamlit application (`dashboard/app.py` and `dashboard/pages/1_Live_Run_Monitor.py` through `5_Demo_Control.py`) with zero-Spark Delta Lake reader:
+  1. **Airflow Metadata Read-Only Adapter (`dashboard/lib/airflow_meta.py`):** Queries Airflow 3.4.0 metadata Postgres instance using the dedicated `airflow_ro` read-only database role (`SELECT` only). Maps exact columns for the Task Instances view (`Task ID`, `Map Index`, `State`, `Start Date`, `End Date`, `Duration`, `Try Number`, `Pool`, `Operator`).
+  2. **Zero-Spark Delta Lake Reader (`dashboard/lib/delta_reader.py`):** Uses the Rust-backed `deltalake` (Delta-RS) package to read `data/gold/daily_revenue` and `data/gold/customer_revenue` directly into pandas DataFrames. Completely avoids JVM startup latency and PySpark memory footprint for dashboard reads.
+  3. **Live Run Monitor with Real-Time Stages (`1_Live_Run_Monitor.py`):** Mirrors Airflow's Task Instances UI:
+     - DAG and DAG run selectors with auto-refresh every 4 seconds via `st.fragment(run_every=4)`.
+     - Status line indicating current running or failed stage with try numbers.
+     - Progress bar tracking completed vs total tasks.
+     - Colored Graphviz stage graph (`st.graphviz_chart`) matching task state colors (green success, red failure, blue running, yellow retry, grey queued/skipped).
+     - Filterable Task Instances table with state badge pills, search box, and state dropdown.
+     - Tabs for Task Instances, Errors (with structured log excerpt), and Logs (filterable by level and task).
+  4. **Business & Health Dashboards (`2_Revenue_Dashboard.py`, `3_Pipeline_Health.py`):** Surface financial KPIs (total revenue, order counts, AOV), daily and channel trends, customer metrics, task durations, retry resiliency counts, DQ check results, and quarantine volumes.
+  5. **Incident Audit & Demo Control (`4_Incident_Audit.py`, `5_Demo_Control.py`):** Surface complete post-mortem audit trails (agent tool call timeline, evidence citations, sandbox results, PR previews, token costs) and provide one-click failure injection configuration with exact copy-pasteable PowerShell execution commands.
+  6. **Resilient Empty State Handling:** All library adapters and UI views handle absent or unmaterialized data gracefully without raising exceptions.
+- **Rationale:** Fulfills Section 9 of the project brief. Provides live operational visibility for operators, business stakeholders, and AI incident auditors.
+- **Date:** 2026-11-21
