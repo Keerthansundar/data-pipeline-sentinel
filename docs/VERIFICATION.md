@@ -75,3 +75,52 @@ python -m ruff format --check .
 python -m pytest tests/
 ======================== 5 passed, 1 warning in 0.50s =========================
 ```
+
+---
+
+## Phase 2 Verification (Completed 2026-11-21)
+
+### 1. Historical Seeding (`make seed`)
+```
+docker compose exec airflow-scheduler python -m simulator.generate_history
+
+2026-11-21 05:24:39,188 | INFO | __main__ | dag=- task=- run_id=- batch=- try=- | Starting synthetic data generation: days=30, orders_per_day=5000, seed=42, start_date=2026-10-01
+2026-11-21 05:24:48,931 | INFO | __main__ | dag=- task=- run_id=- batch=- try=- | Successfully generated 30 days of data in /opt/airflow/data/source_archive (total_orders=150000, quarantine_noise=801)
+```
+- Total files generated in `data/source_archive`: 60 (30 `orders_YYYY-MM-DD.csv` and 30 `customers_YYYY-MM-DD.json`).
+
+### 2. Simulator DAG Run (`vendor_feed_simulator`)
+```
+docker compose exec airflow-scheduler airflow dags trigger vendor_feed_simulator --conf '{"batch_date": "2026-10-01", "failure": "none"}'
+docker compose exec airflow-scheduler airflow dags list-runs vendor_feed_simulator
+
+dag_id                | run_id                                   | state   | run_after                        | logical_date | start_date                       | end_date                        
+======================+==========================================+=========+==================================+==============+==================================+=================================
+vendor_feed_simulator | manual__2026-11-21T05:25:05.055829+00:00 | success | 2026-11-21T05:25:05.055829+00:00 |              | 2026-11-21T05:25:05.855241+00:00 | 2026-11-21T05:25:07.457902+00:00
+```
+
+### 3. Failure Mode Transformations (`tests.verify_phase2`)
+```
+PASS: COLUMN_RENAME (header=['order_id', 'customer_id', 'order_date', 'total_amount', 'status', 'channel'])
+PASS: DATE_FORMAT (count=229, sample=['21/10/2026', '15/10/2026', '19/10/2026'])
+PASS: NULL_SPIKE (null_count=1492/5000, pct=29.8%)
+PASS: AMBIGUOUS_DATE (count=243, sample=['05/10/2026', '02/10/2026', '04/10/2026'])
+PASS: MISSING_FILE (files suppressed from landing)
+PASS: NONE (healthy batch restored)
+```
+
+### 4. Ops Database `demo_config` Sync
+```sql
+SELECT id, failure_mode, target_batch_date, updated_at FROM demo_config;
+
+ id | failure_mode | target_batch_date |          updated_at           
+----+--------------+-------------------+-------------------------------
+  1 | none         | 2026-10-01        | 2026-11-21 05:26:14.882365+00
+(1 row)
+```
+
+### 5. Unit Tests
+```
+python -m pytest tests/ -v
+======================== 11 passed, 1 warning in 1.95s ========================
+```
