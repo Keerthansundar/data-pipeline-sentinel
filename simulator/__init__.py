@@ -1,0 +1,1 @@
+"""Vendor feed data simulator."""

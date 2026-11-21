@@ -1,0 +1,6 @@
+# Additional dependencies for Airflow container
+pyspark==3.5.4
+delta-spark==3.3.0
+Faker==36.1.1
+PyGithub==2.5.0
+pytest==8.3.4

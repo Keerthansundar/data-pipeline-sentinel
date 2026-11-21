@@ -1,0 +1,37 @@
+# Silver layer transformation and cleaning rules
+orders:
+  required_columns:
+    - order_id
+    - customer_id
+    - order_date
+    - amount
+    - status
+    - channel
+
+  column_aliases:
+    amount:
+      - amount
+
+  date_formats:
+    order_date:
+      - "%Y-%m-%d"
+
+  max_unparseable_ratio: 0.01
+
+  quarantine_rules:
+    null_keys:
+      - order_id
+      - customer_id
+    negative_amount: true
+
+customers:
+  required_columns:
+    - customer_id
+    - name
+    - email
+    - city
+    - segment
+    - signup_date
+
+  pii_columns:
+    - email

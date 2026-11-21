@@ -1,0 +1,24 @@
+# Agent Guardrail Policies and Whitelists
+agent:
+  allowed_files:
+    - "config/silver_rules.yml"
+
+  allowed_operations:
+    - "append_unique"
+
+  allowed_key_paths:
+    - "orders.date_formats.order_date"
+    - "orders.column_aliases.amount"
+
+  date_format_whitelist:
+    - "%d/%m/%Y"
+    - "%m/%d/%Y"
+    - "%d-%m-%Y"
+    - "%Y/%m/%d"
+    - "%d.%m.%Y"
+
+  max_edits_per_diagnosis: 1
+  min_confidence_for_patch: 0.80
+  max_ambiguous_day_month_share: 0.00
+  max_tool_calls: 8
+  max_tool_output_chars: 4000

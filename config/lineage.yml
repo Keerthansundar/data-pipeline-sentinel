@@ -1,0 +1,23 @@
+# Data Lineage: maps pipeline tasks to downstream artifacts and dashboard views
+lineage:
+  wait_for_vendor_files:
+    downstream_tables: []
+    dashboard_pages: ["Live Run Monitor"]
+  bronze_ingest:
+    downstream_tables: ["bronze.orders", "bronze.customers"]
+    dashboard_pages: ["Live Run Monitor", "Pipeline Health"]
+  silver_transform:
+    downstream_tables: ["silver.orders", "silver.customers", "quarantine.orders"]
+    dashboard_pages: ["Live Run Monitor", "Pipeline Health"]
+  data_quality_checks:
+    downstream_tables: ["ops.dq_results"]
+    dashboard_pages: ["Live Run Monitor", "Pipeline Health"]
+  gold_build:
+    downstream_tables: ["gold.daily_revenue", "gold.revenue_by_channel", "gold.customer_summary"]
+    dashboard_pages: ["Live Run Monitor", "Revenue Dashboard", "Pipeline Health"]
+  freshness_check:
+    downstream_tables: []
+    dashboard_pages: ["Live Run Monitor", "Pipeline Health"]
+  resolve_incidents:
+    downstream_tables: ["ops.incidents"]
+    dashboard_pages: ["Live Run Monitor", "Incident Audit"]

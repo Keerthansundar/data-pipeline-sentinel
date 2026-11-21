@@ -1,0 +1,184 @@
+---
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  image: pipeline-sentinel-airflow:3.4.0
+  env_file:
+    - .env
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqnzq8=}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret_for_demo_pipeline_sentinel_12345}
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    PYTHONPATH: /opt/airflow:/opt/airflow/pipeline:/opt/airflow/responder:/opt/airflow/simulator
+    DEMO_MODE: ${DEMO_MODE:-true}
+    PR_MODE: ${PR_MODE:-dry_run}
+    AGENT_ENABLED: ${AGENT_ENABLED:-true}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    OPS_DB_HOST: ops-postgres
+    OPS_DB_PORT: 5432
+    OPS_DB_NAME: ops
+    OPS_DB_USER: ops_user
+    OPS_DB_PASSWORD: ops_password
+    SMTP_HOST: mailpit
+    SMTP_PORT: 1025
+    ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-engineer@example.com}
+    ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-pipeline-sentinel@example.com}
+    SPARK_LOCAL_IP: 127.0.0.1
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./pipeline:/opt/airflow/pipeline
+    - ./config:/opt/airflow/config
+    - ./responder:/opt/airflow/responder
+    - ./simulator:/opt/airflow/simulator
+    - ./data:/opt/airflow/data
+    - ./tests:/opt/airflow/tests
+    - ./logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+      - ./ops/sql/002_roles.sql:/docker-entrypoint-initdb.d/002_roles.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  ops-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ops_user
+      POSTGRES_PASSWORD: ops_password
+      POSTGRES_DB: ops
+    volumes:
+      - ops-postgres-data:/var/lib/postgresql/data
+      - ./ops/sql/001_ops_schema.sql:/docker-entrypoint-initdb.d/001_ops_schema.sql:ro
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ops_user -d ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    command:
+      - /bin/bash
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags
+        airflow db migrate
+        airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email airflow@example.com || true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    user: "0:0"
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: always
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\""]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: always
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/streamlit/Dockerfile
+    image: pipeline-sentinel-streamlit:latest
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./dashboard:/app/dashboard
+      - ./config:/app/config
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      OPS_DB_HOST: ops-postgres
+      OPS_DB_PORT: 5432
+      AIRFLOW_DB_HOST: postgres
+      AIRFLOW_DB_PORT: 5432
+    depends_on:
+      ops-postgres:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: always
+
+volumes:
+  airflow-postgres-data:
+  ops-postgres-data:

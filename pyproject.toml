@@ -1,0 +1,41 @@
+[project]
+name = "pipeline-sentinel"
+version = "0.1.0"
+description = "A self-healing medallion data pipeline with a guardrailed AI incident agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.10.0,<3.0.0",
+    "ruamel.yaml>=0.18.0,<0.19.0",
+    "faker>=36.0.0,<37.0.0",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "spark: tests requiring PySpark and Delta Lake",
+    "slow: slow running tests",
+]
