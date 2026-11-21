@@ -125,10 +125,16 @@ with r2_col1:
             x=alt.X(
                 "order_date:T",
                 title=None,
-                axis=alt.Axis(format="%b %d", labelAngle=0, grid=False),
+                axis=alt.Axis(
+                    format="%b %d",
+                    labelAngle=0,
+                    grid=False,
+                    tickCount=7,
+                ),
             )
         )
         bars = base.mark_bar(
+            size=12,
             color="#0F9D9A",
             opacity=0.85,
             cornerRadiusTopLeft=3,
@@ -138,14 +144,18 @@ with r2_col1:
                 "total_revenue:Q",
                 title="Revenue ($)",
                 scale=alt.Scale(zero=False),
-                axis=alt.Axis(format="$,.0f", grid=True, gridColor="#E5E9EB"),
+                axis=alt.Axis(format="$,.0f", grid=True, gridColor="#DDE5E8"),
             ),
             tooltip=[
                 alt.Tooltip("order_date:T", title="Date", format="%Y-%m-%d"),
                 alt.Tooltip("total_revenue:Q", title="Revenue", format="$,.2f"),
             ],
         )
-        line = base.mark_line(color="#0B1F4B", strokeWidth=2.5).encode(
+        line = base.mark_line(
+            color="#0B1F4B",
+            strokeWidth=3.0,
+            opacity=1.0,
+        ).encode(
             y=alt.Y("moving_avg_7d:Q", title=None),
             tooltip=[alt.Tooltip("moving_avg_7d:Q", title="7D Avg", format="$,.2f")],
         )
@@ -161,30 +171,34 @@ with r2_col2:
             "channel_revenue" if "channel_revenue" in cur_channel.columns else "total_revenue"
         )
         ch_summary = cur_channel.groupby("channel")[ch_rev_col].sum().reset_index()
-        tot_rev = ch_summary[ch_rev_col].sum()
-        ch_summary["share_pct"] = (ch_summary[ch_rev_col] / tot_rev * 100.0) if tot_rev > 0 else 0.0
+        tot_rev = float(ch_summary[ch_rev_col].sum())
 
-        donut = (
-            alt.Chart(ch_summary)
-            .mark_arc(innerRadius=50, outerRadius=90, stroke="#FFFFFF", strokeWidth=1.5)
-            .encode(
-                theta=alt.Theta(f"{ch_rev_col}:Q"),
-                color=alt.Color(
-                    "channel:N",
-                    scale=alt.Scale(range=["#0F9D9A", "#0B1F4B", "#8EDCE0", "#5B6770"]),
-                    title=None,
-                    legend=alt.Legend(orient="bottom", direction="horizontal"),
-                ),
-                tooltip=[
-                    alt.Tooltip("channel:N", title="Channel"),
-                    alt.Tooltip(f"{ch_rev_col}:Q", title="Revenue", format="$,.2f"),
-                    alt.Tooltip("share_pct:Q", title="Share", format=".1f%"),
-                ],
+        if ch_summary.empty or tot_rev <= 0:
+            st.info("No channel breakdown data available.")
+        else:
+            ch_summary["share_pct"] = ch_summary[ch_rev_col] / tot_rev * 100.0
+
+            donut = (
+                alt.Chart(ch_summary)
+                .mark_arc(innerRadius=50, outerRadius=90, stroke="#FFFFFF", strokeWidth=1.5)
+                .encode(
+                    theta=alt.Theta(f"{ch_rev_col}:Q", stack=True),
+                    color=alt.Color(
+                        "channel:N",
+                        scale=alt.Scale(range=["#0F9D9A", "#0B1F4B", "#8EDCE0", "#5B6770"]),
+                        title=None,
+                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                    ),
+                    tooltip=[
+                        alt.Tooltip("channel:N", title="Channel"),
+                        alt.Tooltip(f"{ch_rev_col}:Q", title="Revenue", format="$,.2f"),
+                        alt.Tooltip("share_pct:Q", title="Share", format=".1f%"),
+                    ],
+                )
+                .properties(width=280, height=260)
+                .configure_view(strokeWidth=0)
             )
-            .properties(height=260)
-            .configure_view(strokeWidth=0)
-        )
-        st.altair_chart(donut, use_container_width=True)
+            st.altair_chart(donut, use_container_width=False)
     else:
         st.info("Channel breakdown not available.")
 
@@ -208,12 +222,12 @@ with r3_col1:
                     "customer_label:N",
                     sort="-x",
                     title=None,
-                    axis=alt.Axis(labelLimit=170, grid=False),
+                    axis=alt.Axis(labelLimit=250, grid=False),
                 ),
                 x=alt.X(
                     "customer_revenue:Q",
                     title="Revenue ($)",
-                    axis=alt.Axis(format="$,.0f", grid=True, gridColor="#E5E9EB"),
+                    axis=alt.Axis(format="$,.0f", grid=True, gridColor="#DDE5E8"),
                 ),
                 tooltip=[
                     alt.Tooltip("name:N", title="Customer"),
@@ -222,7 +236,7 @@ with r3_col1:
                     alt.Tooltip("total_orders:Q", title="Orders"),
                 ],
             )
-            .properties(height=250)
+            .properties(height=340)
             .configure_view(strokeWidth=0)
         )
         st.altair_chart(cust_bar, use_container_width=True)

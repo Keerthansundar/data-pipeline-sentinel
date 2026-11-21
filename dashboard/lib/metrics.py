@@ -282,11 +282,106 @@ def compute_top_customers(
         meta = customer_names.get(cid, {})
         name = meta.get("name") or "Unknown"
         resolved_names.append(name)
-        labels.append(f"{name} ({cid})")
+        disp_name = (name[:16] + "…") if len(name) > 17 else name
+        labels.append(f"{disp_name} ({cid})")
 
     agg["name"] = resolved_names
     agg["customer_label"] = labels
     return agg.sort_values(by="customer_revenue", ascending=False).head(limit)
+
+
+def group_runs_by_batch(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group task-level pipeline_run_log entries by batch run (dag_run_id and batch_date).
+
+    Returns a list of batch run dictionaries:
+        - batch_date: str (YYYY-MM-DD)
+        - dag_run_id: str
+        - status: str ('FAILED' if any task failed, 'RESOLVED' if retried & succeeded, else 'SUCCESS')
+        - total_duration_sec: float (sum of task durations in seconds)
+        - orders_in: int (orders count from bronze_ingest or max rows_in)
+        - quarantined: int (quarantined orders from silver_transform or sum)
+        - retries: int (count of retried tasks)
+        - started_at: datetime | None
+        - ended_at: datetime | None
+    """
+    if not runs:
+        return []
+
+    from collections import OrderedDict
+
+    grouped: OrderedDict[tuple[str, str], list[dict[str, Any]]] = OrderedDict()
+    for r in runs:
+        b_date = str(r.get("batch_date", ""))
+        d_run = str(r.get("dag_run_id", ""))
+        key = (d_run, b_date)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(r)
+
+    batch_runs = []
+    for (d_run, b_date), task_runs in grouped.items():
+        statuses = [str(t.get("status", "")).upper() for t in task_runs]
+        if any(s in ("FAILED", "ERROR", "UPSTREAM_FAILED") for s in statuses):
+            final_status = "FAILED"
+        elif any("RETRY" in s or s == "RESOLVED" for s in statuses):
+            final_status = "RESOLVED"
+        else:
+            final_status = "SUCCESS"
+
+        total_duration = 0.0
+        start_times = []
+        end_times = []
+        for t in task_runs:
+            s_at = t.get("started_at")
+            e_at = t.get("ended_at")
+            if s_at and e_at:
+                try:
+                    s_dt = pd.to_datetime(s_at)
+                    e_dt = pd.to_datetime(e_at)
+                    dur = (e_dt - s_dt).total_seconds()
+                    if dur > 0:
+                        total_duration += dur
+                    start_times.append(s_dt)
+                    end_times.append(e_dt)
+                except Exception:
+                    pass
+
+        bronze_task = next((t for t in task_runs if t.get("task_id") == "bronze_ingest"), None)
+        if bronze_task:
+            orders_in = int(bronze_task.get("rows_in") or bronze_task.get("rows_out") or 0)
+        else:
+            orders_in = max((int(t.get("rows_in") or 0) for t in task_runs), default=0)
+
+        silver_task = next((t for t in task_runs if t.get("task_id") == "silver_transform"), None)
+        if silver_task:
+            quarantined = int(silver_task.get("rows_quarantined") or 0)
+        else:
+            quarantined = sum(int(t.get("rows_quarantined") or 0) for t in task_runs)
+
+        retries = sum(
+            1
+            for t in task_runs
+            if "RETRY" in str(t.get("status", "")).upper() or int(t.get("try_number", 1) or 1) > 1
+        )
+
+        min_start = min(start_times) if start_times else None
+        max_end = max(end_times) if end_times else None
+
+        batch_runs.append(
+            {
+                "batch_date": b_date,
+                "dag_run_id": d_run,
+                "status": final_status,
+                "total_duration_sec": round(total_duration, 1),
+                "orders_in": orders_in,
+                "quarantined": quarantined,
+                "retries": retries,
+                "started_at": min_start,
+                "ended_at": max_end,
+            }
+        )
+
+    return batch_runs
 
 
 def compute_pipeline_status(
@@ -366,8 +461,9 @@ def compute_pipeline_health_kpis(
         else:
             last_run_time = str(ts)[:16]
 
-    # Success rate over last 30 runs
-    recent_30 = runs[:30]
+    # Success rate over last 30 batch runs
+    batch_runs = group_runs_by_batch(runs)
+    recent_30 = batch_runs[:30]
     success_cnt = sum(
         1 for r in recent_30 if str(r.get("status", "")).upper() in ("SUCCESS", "RESOLVED")
     )
@@ -383,13 +479,31 @@ def compute_pipeline_health_kpis(
             diff = (now_utc - last_refresh).total_seconds()
         freshness_hours = max(0.0, diff / 3600.0)
 
-    # Quarantine Rate for latest batch
+    # Quarantine Rate for latest batch (using silver_transform or summing across that batch)
     quarantine_rate = 0.0
-    if latest_run:
-        q_rows = float(latest_run.get("rows_quarantined") or 0)
-        out_rows = float(latest_run.get("rows_out") or 0)
-        total_batch_orders = q_rows + out_rows
-        quarantine_rate = (q_rows / total_batch_orders * 100.0) if total_batch_orders > 0 else 0.0
+    if runs:
+        latest_batch = str(runs[0].get("batch_date", ""))
+        latest_batch_tasks = [r for r in runs if str(r.get("batch_date", "")) == latest_batch]
+        silver_run = next(
+            (r for r in latest_batch_tasks if r.get("task_id") == "silver_transform"), None
+        )
+        if silver_run:
+            q_rows = float(silver_run.get("rows_quarantined") or 0)
+            in_rows = float(
+                silver_run.get("rows_in") or (q_rows + float(silver_run.get("rows_out") or 0))
+            )
+            quarantine_rate = (q_rows / in_rows * 100.0) if in_rows > 0 else 0.0
+        else:
+            q_rows = sum(float(r.get("rows_quarantined") or 0) for r in latest_batch_tasks)
+            bronze_run = next(
+                (r for r in latest_batch_tasks if r.get("task_id") == "bronze_ingest"), None
+            )
+            in_rows = (
+                float(bronze_run.get("rows_in") or bronze_run.get("rows_out") or 5000)
+                if bronze_run
+                else 5000.0
+            )
+            quarantine_rate = (q_rows / in_rows * 100.0) if in_rows > 0 else 0.0
 
     return {
         "last_run_status": last_run_status,
@@ -402,7 +516,7 @@ def compute_pipeline_health_kpis(
 
 
 def compute_batch_durations(runs: list[dict[str, Any]]) -> pd.DataFrame:
-    """Aggregate total duration in seconds per batch date across all tasks.
+    """Aggregate total duration in seconds per batch run across all tasks.
 
     Args:
         runs: Execution history from pipeline_run_log.
@@ -411,20 +525,18 @@ def compute_batch_durations(runs: list[dict[str, Any]]) -> pd.DataFrame:
         DataFrame with batch_date and total_duration_sec.
     """
     if not runs:
-        return pd.DataFrame(columns=["batch_date", "total_duration_sec"])
+        return pd.DataFrame(columns=["batch_date", "total_duration_sec", "status"])
 
-    df = pd.DataFrame(runs)
-    if "started_at" not in df.columns or "ended_at" not in df.columns:
-        return pd.DataFrame(columns=["batch_date", "total_duration_sec"])
+    batch_runs = group_runs_by_batch(runs)
+    if not batch_runs:
+        return pd.DataFrame(columns=["batch_date", "total_duration_sec", "status"])
 
-    df["started_at"] = pd.to_datetime(df["started_at"])
-    df["ended_at"] = pd.to_datetime(df["ended_at"])
-    df["duration"] = (df["ended_at"] - df["started_at"]).dt.total_seconds().fillna(0.0)
-
-    agg = df.groupby("batch_date")["duration"].sum().reset_index()
-    agg = agg.rename(columns={"duration": "total_duration_sec"})
-    agg["batch_date"] = pd.to_datetime(agg["batch_date"]).dt.strftime("%Y-%m-%d")
-    return agg.sort_values(by="batch_date")
+    df = pd.DataFrame(batch_runs)
+    df["batch_date"] = pd.to_datetime(df["batch_date"]).dt.strftime("%Y-%m-%d")
+    df = df[["batch_date", "total_duration_sec", "status"]].drop_duplicates(
+        subset=["batch_date"], keep="first"
+    )
+    return df.sort_values(by="batch_date")
 
 
 def compute_latest_row_flow(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -440,17 +552,17 @@ def compute_latest_row_flow(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return []
 
     # Get latest batch
-    latest_batch = runs[0].get("batch_date")
-    batch_runs = [r for r in runs if r.get("batch_date") == latest_batch]
+    latest_batch = str(runs[0].get("batch_date", ""))
+    batch_runs = [r for r in runs if str(r.get("batch_date", "")) == latest_batch]
 
     bronze_run = next((r for r in batch_runs if r.get("task_id") == "bronze_ingest"), None)
     silver_run = next((r for r in batch_runs if r.get("task_id") == "silver_transform"), None)
     gold_run = next((r for r in batch_runs if r.get("task_id") == "gold_build"), None)
 
-    orders_in = bronze_run.get("rows_in", 5000) if bronze_run else 5000
-    clean_orders = silver_run.get("rows_out", 4974) if silver_run else 4974
-    quarantined = silver_run.get("rows_quarantined", 26) if silver_run else 26
-    gold_orders = gold_run.get("rows_out", clean_orders) if gold_run else clean_orders
+    orders_in = int(bronze_run.get("rows_in") or 5000) if bronze_run else 5000
+    clean_orders = int(silver_run.get("rows_out") or 4974) if silver_run else 4974
+    quarantined = int(silver_run.get("rows_quarantined") or 26) if silver_run else 26
+    gold_orders = int(gold_run.get("rows_out") or clean_orders) if gold_run else clean_orders
 
     return [
         {"stage": "1. Orders In", "count": orders_in, "color": "#0F9D9A", "pct_of_in": 100.0},

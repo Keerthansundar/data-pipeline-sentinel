@@ -431,3 +431,155 @@ def test_ui_components_status_pill():
     pill_fail = status_pill("Fail", "error")
     assert "Fail" in pill_fail
     assert "#991B1B" in pill_fail
+
+
+def test_group_runs_by_batch_and_per_run_totals():
+    """Verify group_runs_by_batch groups tasks into batch runs with real schema."""
+    from datetime import datetime, timedelta
+
+    from dashboard.lib.metrics import compute_batch_durations, group_runs_by_batch
+
+    t0 = datetime(2026, 10, 2, 10, 0, 0)
+    # 4 tasks belonging to one DAG run for 2026-10-02
+    runs = [
+        {
+            "dag_run_id": "scheduled__2026-10-02T00:00:00",
+            "task_id": "gold_build",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 4974,
+            "rows_out": 4974,
+            "rows_quarantined": 0,
+            "started_at": t0 + timedelta(seconds=90),
+            "ended_at": t0 + timedelta(seconds=120),
+        },
+        {
+            "dag_run_id": "scheduled__2026-10-02T00:00:00",
+            "task_id": "data_quality_checks",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 4974,
+            "rows_quarantined": 0,
+            "started_at": t0 + timedelta(seconds=60),
+            "ended_at": t0 + timedelta(seconds=90),
+        },
+        {
+            "dag_run_id": "scheduled__2026-10-02T00:00:00",
+            "task_id": "silver_transform",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 4974,
+            "rows_quarantined": 26,
+            "started_at": t0 + timedelta(seconds=20),
+            "ended_at": t0 + timedelta(seconds=60),
+        },
+        {
+            "dag_run_id": "scheduled__2026-10-02T00:00:00",
+            "task_id": "bronze_ingest",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 5386,
+            "rows_quarantined": 0,
+            "started_at": t0,
+            "ended_at": t0 + timedelta(seconds=20),
+        },
+    ]
+
+    batch_runs = group_runs_by_batch(runs)
+    assert len(batch_runs) == 1
+    br = batch_runs[0]
+    assert br["batch_date"] == "2026-10-02"
+    assert br["status"] == "SUCCESS"
+    assert br["orders_in"] == 5000
+    assert br["quarantined"] == 26
+    # Sum of task durations: 20s + 40s + 30s + 30s = 120s
+    assert abs(br["total_duration_sec"] - 120.0) < 0.1
+
+    # compute_batch_durations must use the same per-run totals
+    dur_df = compute_batch_durations(runs)
+    assert len(dur_df) == 1
+    assert dur_df.iloc[0]["batch_date"] == "2026-10-02"
+    assert abs(dur_df.iloc[0]["total_duration_sec"] - 120.0) < 0.1
+
+
+def test_quarantine_rate_reads_silver_transform_or_sum():
+    """Verify quarantine rate reads silver_transform row (26/5000 = 0.52%), not gold_build."""
+    from dashboard.lib.metrics import compute_pipeline_health_kpis
+
+    # gold_build is at runs[0] with quarantined=0
+    runs = [
+        {
+            "dag_run_id": "manual__1",
+            "task_id": "gold_build",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 4974,
+            "rows_out": 4974,
+            "rows_quarantined": 0,
+        },
+        {
+            "dag_run_id": "manual__1",
+            "task_id": "silver_transform",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 4974,
+            "rows_quarantined": 26,
+        },
+        {
+            "dag_run_id": "manual__1",
+            "task_id": "bronze_ingest",
+            "batch_date": "2026-10-02",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 5386,
+            "rows_quarantined": 0,
+        },
+    ]
+
+    kpis = compute_pipeline_health_kpis(runs, last_refresh=None, resolved_by_retry=0)
+    # Expected: 26 / 5000 * 100 = 0.52%
+    assert abs(kpis["quarantine_rate"] - 0.52) < 0.01
+
+
+def test_cleanup_batch_logic():
+    """Verify cleanup_batch script logic for Delta tables and Ops DB."""
+    from pathlib import Path
+    from unittest.mock import MagicMock, patch
+
+    from tests.cleanup_batch import (
+        delete_from_delta_tables,
+        delete_from_ops_db,
+        validate_batch_date,
+    )
+
+    assert validate_batch_date("2026-11-01") is True
+    assert validate_batch_date("invalid-date") is False
+
+    # Mock Delta table deletes
+    with patch("tests.cleanup_batch.DeltaTable") as mock_dt:
+        mock_instance = MagicMock()
+        mock_dt.return_value = mock_instance
+        # Create a fake root where one table path exists
+        with patch.object(Path, "exists", return_value=True):
+            res = delete_from_delta_tables("2026-11-01", root_dir=Path("/fake/root"))
+            assert len(res) == 8
+            # DeltaTable.delete should be called with predicate
+            assert mock_instance.delete.called
+            call_arg = mock_instance.delete.call_args[0][0]
+            assert call_arg == "_batch_date = '2026-11-01'"
+
+    # Mock Postgres Ops DB deletes
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.rowcount = 3
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    ops_res = delete_from_ops_db("2026-11-01", conn=mock_conn)
+    assert "pipeline_run_log" in ops_res
+    assert "incidents" in ops_res
+    assert ops_res["pipeline_run_log"] == 3
+    assert mock_cursor.execute.call_count == 8

@@ -10,6 +10,7 @@ from dashboard.lib.metrics import (
     compute_latest_row_flow,
     compute_pipeline_health_kpis,
     compute_pipeline_status,
+    group_runs_by_batch,
 )
 from dashboard.lib.ops_db import OpsDbAdapter
 from dashboard.lib.ui_components import (
@@ -109,28 +110,33 @@ r2_col1, r2_col2 = st.columns([1.5, 1.5])
 with r2_col1:
     section_title("Run Duration by Batch")
     batch_dur_df = compute_batch_durations(runs)
-    if not batch_dur_df.empty:
+    if not batch_dur_df.empty and batch_dur_df["total_duration_sec"].sum() > 0:
         dur_chart = (
             alt.Chart(batch_dur_df)
             .mark_bar(
+                size=14,
                 color="#0B1F4B",
                 cornerRadiusTopLeft=3,
                 cornerRadiusTopRight=3,
             )
             .encode(
                 x=alt.X(
-                    "batch_date:T",
+                    "batch_date:O",
                     title=None,
-                    axis=alt.Axis(format="%b %d", labelAngle=0, grid=False),
+                    axis=alt.Axis(
+                        labelAngle=-45 if len(batch_dur_df) > 10 else 0,
+                        grid=False,
+                    ),
                 ),
                 y=alt.Y(
                     "total_duration_sec:Q",
                     title="Duration (s)",
-                    axis=alt.Axis(grid=True, gridColor="#E5E9EB"),
+                    axis=alt.Axis(grid=True, gridColor="#DDE5E8"),
                 ),
                 tooltip=[
-                    alt.Tooltip("batch_date:T", title="Batch", format="%Y-%m-%d"),
+                    alt.Tooltip("batch_date:O", title="Batch"),
                     alt.Tooltip("total_duration_sec:Q", title="Total Duration", format=".1fs"),
+                    alt.Tooltip("status:N", title="Status"),
                 ],
             )
             .properties(height=230)
@@ -143,7 +149,7 @@ with r2_col1:
 with r2_col2:
     section_title("Latest Batch Row Flow")
     flow_items = compute_latest_row_flow(runs)
-    if flow_items:
+    if flow_items and any(item["count"] > 0 for item in flow_items):
         flow_df = pd.DataFrame(flow_items)
         flow_chart = (
             alt.Chart(flow_df)
@@ -152,13 +158,30 @@ with r2_col2:
                 cornerRadiusBottomRight=3,
             )
             .encode(
-                y=alt.Y("stage:N", sort=None, title=None, axis=alt.Axis(grid=False)),
+                y=alt.Y(
+                    "stage:N",
+                    sort=["1. Orders In", "2. Clean Orders", "3. Quarantined", "4. Gold Orders"],
+                    title=None,
+                    axis=alt.Axis(grid=False),
+                ),
                 x=alt.X(
                     "count:Q",
                     title="Row Count",
-                    axis=alt.Axis(grid=True, gridColor="#E5E9EB"),
+                    axis=alt.Axis(grid=True, gridColor="#DDE5E8"),
                 ),
-                color=alt.Color("color:N", scale=None),
+                color=alt.Color(
+                    "stage:N",
+                    scale=alt.Scale(
+                        domain=[
+                            "1. Orders In",
+                            "2. Clean Orders",
+                            "3. Quarantined",
+                            "4. Gold Orders",
+                        ],
+                        range=["#0F9D9A", "#1E9E6A", "#D64545", "#0B1F4B"],
+                    ),
+                    legend=None,
+                ),
                 tooltip=[
                     alt.Tooltip("stage:N", title="Stage"),
                     alt.Tooltip("count:Q", title="Rows", format=","),
@@ -178,13 +201,27 @@ r3_col1, r3_col2 = st.columns([1.5, 1.5])
 with r3_col1:
     section_title("Data Quality Checks (Latest 8)")
     if dq_list:
-        latest_dq = dq_list[:8]
+        seen = set()
+        deduped_dq = []
+        for r in dq_list:
+            key = (
+                r.get("check_name"),
+                str(r.get("batch_date")),
+                str(r.get("observed_value")),
+                str(r.get("threshold_value")),
+            )
+            if key not in seen:
+                seen.add(key)
+                deduped_dq.append(r)
+
+        latest_dq = deduped_dq[:8]
         dq_display_rows = []
         for row in latest_dq:
             p_val = row.get("passed", False)
             pill = status_pill("Pass", "success") if p_val else status_pill("Fail", "error")
             dq_display_rows.append(
                 {
+                    "Batch Date": str(row.get("batch_date", "")),
                     "Check": row.get("check_name", ""),
                     "Status": pill,
                     "Observed": str(row.get("observed_value", "")),
@@ -198,8 +235,9 @@ with r3_col1:
 
 with r3_col2:
     section_title("Recent Runs (Latest 8)")
-    if runs:
-        recent_runs = runs[:8]
+    batch_runs = group_runs_by_batch(runs)
+    if batch_runs:
+        recent_runs = batch_runs[:8]
         run_display_rows = []
         for r in recent_runs:
             st_val = str(r.get("status", "")).upper()
@@ -210,20 +248,17 @@ with r3_col2:
             )
             pill = status_pill(st_val, kind)
 
-            start = r.get("started_at")
-            end = r.get("ended_at")
-            dur_str = "-"
-            if start and end:
-                s_dt = pd.to_datetime(start)
-                e_dt = pd.to_datetime(end)
-                dur_str = f"{(e_dt - s_dt).total_seconds():.1f}s"
+            dur_sec = float(r.get("total_duration_sec") or 0.0)
+            dur_str = f"{dur_sec:.1f}s" if dur_sec > 0 else "-"
 
             run_display_rows.append(
                 {
                     "Batch Date": str(r.get("batch_date", "")),
                     "Status": pill,
                     "Duration": dur_str,
-                    "Orders Processed": f"{r.get('rows_out', 0):,}",
+                    "Orders In": f"{r.get('orders_in', 0):,}",
+                    "Quarantined": f"{r.get('quarantined', 0):,}",
+                    "Retries": str(r.get("retries", 0)),
                 }
             )
         df_run_disp = pd.DataFrame(run_display_rows)
