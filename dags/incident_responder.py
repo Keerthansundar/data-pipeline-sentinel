@@ -17,7 +17,7 @@ def _noop_responder_task(task_name: str):
 with DAG(
     dag_id="incident_responder",
     start_date=datetime(2026, 1, 1, tzinfo=UTC),
-    schedule="* * * * *",
+    schedule=None,
     max_active_runs=1,
     catchup=False,
     tags=["agent", "incident-response"],

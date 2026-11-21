@@ -124,3 +124,35 @@ SELECT id, failure_mode, target_batch_date, updated_at FROM demo_config;
 python -m pytest tests/ -v
 ======================== 11 passed, 1 warning in 1.95s ========================
 ```
+
+---
+
+## Phase 3 Verification (Code Complete — 2026-11-21)
+
+### 1. Code Implementation & Tuning Summary
+- Medallion pipeline modules (`bronze.py`, `silver.py`, `profiling.py`, `dq.py`, `gold.py`, `observability.py`, `spark_session.py`) fully implemented.
+- Spark configuration tuned: `local[4]`, `driver.memory=2g`, `shuffle.partitions=2`, `default.parallelism=2`, Delta data skipping enabled, progress bar disabled.
+- Single-pass aggregations implemented in `dq.py` to calculate row counts, null rates, and revenue sums in one pass.
+- `.coalesce(1)` added to DataFrame writes to reduce file-system lock contention on Windows Hyper-V bind mounts.
+- Column profiling optimized to reuse in-memory DataFrames without redundant Delta scans.
+- Broadcast join (`broadcast(cust_df)`) applied in Gold customer aggregations.
+- `incident_responder` DAG paused with `schedule=None` (pending Phase 5).
+
+### 2. Timed Single-Batch Metrics (`2026-11-01`)
+```
+Layer               Duration    Observed Metrics
+----------------------------------------------------------------------
+Bronze Ingestion     63.67s     Orders: 5,000, Customers: 369
+Silver Transform    ~35s*       Rows In: 5,000, Out: 4,969, Quarantined: 31
+Data Quality Checks ~15s*       Row Conservation: Pass, Null Rates: Pass, Rev Diff: 0.00%
+Gold Build          ~12s*       Daily Rev: $1,267,351.07, Orders: 4,969
+----------------------------------------------------------------------
+* Isolated step durations after JVM initialization and cache materialization.
+```
+
+### 3. Checkpoint Status
+- [x] Code Complete: Medallion pipeline logic, Section 5A error reporting, and Ops DB logging.
+- [ ] Live Idempotency Rerun: Unverified (run `python -m tests.verify_idempotency`).
+- [ ] Spot-Check Reconciliation: Unverified (Gold tables baseline preserved).
+- [ ] Failure Modes Sweep: Unverified (run `python -m tests.run_failure_modes_demo`).
+

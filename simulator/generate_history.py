@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 def generate_history(
     days: int = 30,
-    orders_per_day: int = 5000,
+    orders_per_day: int | None = None,
     seed: int = 42,
     start_date: str = "2026-10-01",
     target_dir: Path | None = None,
@@ -41,10 +41,9 @@ def generate_history(
     Faker.seed(seed)
     fake = Faker()
 
-    # Read ORDERS_PER_DAY env var if present
-    env_orders = os.getenv("ORDERS_PER_DAY")
-    if env_orders and env_orders.isdigit():
-        orders_per_day = int(env_orders)
+    if orders_per_day is None:
+        env_orders = os.getenv("ORDERS_PER_DAY")
+        orders_per_day = int(env_orders) if env_orders and env_orders.isdigit() else 5000
 
     logger.info(
         "Starting synthetic data generation: days=%d, orders_per_day=%d, seed=%d, start_date=%s",

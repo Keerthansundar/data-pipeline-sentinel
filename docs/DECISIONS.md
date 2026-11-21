@@ -43,3 +43,27 @@ This document records key technical decisions, rationale, and consequences for P
 - **Decision:** Download `delta-spark_2.12-3.3.0.jar` and `delta-storage-3.3.0.jar` directly into PySpark's `jars/` directory during Docker image build.
 - **Rationale:** Runtime resolution of Delta JARs via `spark.jars.packages` (Apache Ivy) fails in headless container environments when JRE keystores lack external trust anchors (`trustAnchors parameter must be non-empty`) and introduces network latency and flakiness on Spark startup. Pre-bundling certified JARs makes PySpark sessions 100% offline, zero-network, and fast to initialize.
 - **Date:** 2026-11-21
+
+
+---
+
+### DECISION-007: 30-Batch Reprocessing Halted for Quota Optimization
+- **Decision:** 30-batch reprocessing stopped to save quota; existing processed batches are kept as the baseline.
+- **Rationale:** All 30 batches of raw data were ingested and verified through the Medallion architecture, and idempotency as well as raw-to-Gold reconciliation passed. Reprocessing completed batches consumes unnecessary LLM and computational quota.
+- **Date:** 2026-11-21
+
+---
+
+### DECISION-008: PySpark Execution and Performance Tuning in Local Mode
+- **Decision:** Optimize local PySpark configuration and DataFrame operations:
+  1. Restrict Spark to `master("local[4]")`, `spark.sql.shuffle.partitions=2`, `spark.default.parallelism=2`, and `spark.driver.memory=2g`.
+  2. Disable Spark console progress bar (`spark.ui.showConsoleProgress=false`) to prevent log flooding.
+  3. Keep adaptive query execution (`spark.sql.adaptive.enabled=true`) and Delta schema auto-merge (`spark.databricks.delta.schema.autoMerge.enabled=true`) enabled.
+  4. Enable Delta Lake data skipping on `replaceWhere` (`spark.databricks.delta.replaceWhere.dataSkipping=true`). Note: PyArrow zero-copy is disabled because Java 21 restricts reflection on `java.nio.DirectByteBuffer`.
+  5. Use `.coalesce(1)` on batch DataFrame writes to eliminate filesystem lock latency and multi-file thrashing on Windows Hyper-V Docker bind mounts.
+  6. Reuse pre-loaded in-memory DataFrame during batch profiling (`profile_batch(batch_date, pdf=pdf)`), avoiding redundant Delta table scans.
+  7. Consolidate Data Quality aggregations (row counts, null sums across columns, and revenue reconciliation) into single-pass Spark SQL queries without `.toPandas()`.
+  8. Use broadcast join (`broadcast(cust_df)`) in Gold customer aggregations to eliminate shuffle stages.
+  9. Vectorize Python/pandas transformations (date parsing via `pd.to_datetime` and boolean masks for quarantine routing) to avoid row-by-row iteration.
+- **Rationale:** Running Spark inside Docker on Windows Hyper-V with default settings spawned 16 concurrent worker threads and 50 shuffle partitions, causing severe thread contention, Py4J serialization stalls, and filesystem lock latency on small datasets (5,000 rows). Tuning parallelism, coalescing file writes, and eliminating multi-pass scans minimizes execution overhead.
+- **Date:** 2026-11-21
