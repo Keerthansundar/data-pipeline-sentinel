@@ -14,12 +14,12 @@ from dashboard.lib.ui_components import (
 st.set_page_config(page_title="Live Run Monitor | PipelineSentinel", layout="wide", page_icon="🛡️")
 apply_theme()
 
-st.title("🛡️ Live Run Monitor")
+st.title("Live Run Monitor")
 st.markdown("Real-time Airflow backend stages, DAG execution graphs, and task instance monitoring.")
 
 # Auto-refresh control in sidebar
 with st.sidebar:
-    st.header("⚙️ Controls")
+    st.header("Controls")
     auto_refresh = st.checkbox("Auto-refresh (every 4s)", value=True)
     if auto_refresh:
         st.caption("Auto-refresh active (4 seconds interval)")

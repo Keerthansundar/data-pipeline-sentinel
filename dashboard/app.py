@@ -12,7 +12,7 @@ st.set_page_config(
 )
 apply_theme()
 
-st.title("🛡️ PipelineSentinel: Self-Healing Medallion Data Pipeline")
+st.title("PipelineSentinel: Self-Healing Medallion Data Pipeline")
 st.markdown(
     "Welcome to **PipelineSentinel**, an enterprise self-healing data pipeline featuring Delta Lake medallion architecture, "
     "Airflow orchestration, and a guardrailed OpenAI incident responder agent."
@@ -23,7 +23,7 @@ st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📌 Key Architectural Capabilities")
+    st.subheader("Key Architectural Capabilities")
     st.markdown("""
     - **Bronze, Silver, Gold on Delta Lake:** Daily ETL ingestion, rules-driven schema and date parsing, quarantine partitioning, and aggregated business metrics.
     - **Airflow Orchestration (Airflow 3.4.0):** LocalExecutor with task retries, timeout sensors, failure callbacks, and deterministic stage execution.
@@ -33,7 +33,7 @@ with col1:
     """)
 
 with col2:
-    st.subheader("🧭 Navigation Guide")
+    st.subheader("Navigation Guide")
     st.markdown("""
     Select a page from the sidebar to inspect the live platform:
 

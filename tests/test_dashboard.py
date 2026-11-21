@@ -421,16 +421,19 @@ def test_metrics_pipeline_health_status():
 
 
 def test_ui_components_status_pill():
-    """Verify status_pill rendering."""
+    """Verify status_pill rendering with WCAG AA colors."""
     from dashboard.lib.ui_components import status_pill
 
     pill_pass = status_pill("Pass", "success")
     assert "Pass" in pill_pass
-    assert "#116943" in pill_pass
+    assert "#0B6B45" in pill_pass
+    assert "#DDF3E8" in pill_pass
+    assert "13px" in pill_pass
 
     pill_fail = status_pill("Fail", "error")
     assert "Fail" in pill_fail
-    assert "#991B1B" in pill_fail
+    assert "#A12727" in pill_fail
+    assert "#FBE1E1" in pill_fail
 
 
 def test_group_runs_by_batch_and_per_run_totals():
@@ -583,3 +586,57 @@ def test_cleanup_batch_logic():
     assert "incidents" in ops_res
     assert ops_res["pipeline_run_log"] == 3
     assert mock_cursor.execute.call_count == 8
+
+
+def test_theme_css_rules():
+    """Verify apply_theme CSS contains key typography, control, and header rules."""
+    from unittest.mock import patch
+
+    from dashboard.lib.ui_components import apply_theme
+
+    with patch("streamlit.markdown") as mock_md:
+        apply_theme()
+        assert mock_md.called
+        css = mock_md.call_args[0][0]
+
+        # Key typography rules
+        assert "font-size: 15px;" in css
+        assert "font-size: 13px" in css
+        assert "font-size: 32px;" in css
+        assert "font-size: 18px" in css
+        assert "#0B1F4B" in css
+        assert "#3D4852" in css
+        assert "#4A5560" in css
+
+        # Control styles
+        assert "#B7C4CA" in css
+        assert "#0F9D9A" in css
+        assert "#E3F4F4" in css
+        assert "min-height: 40px" in css
+        assert "box-shadow: 0 0 0 2px" in css
+
+        # Header rule
+        assert 'header[data-testid="stHeader"]' in css
+        assert "#F4F7F8" in css
+
+
+def test_render_html_table():
+    """Verify render_html_table generates zebra rows, table headers, and right-alignment."""
+    import pandas as pd
+
+    from dashboard.lib.ui_components import render_html_table
+
+    df = pd.DataFrame(
+        {
+            "Channel": ["web", "mobile"],
+            "Revenue": [150000.50, 120000.25],
+            "Orders": [500, 400],
+        }
+    )
+    html = render_html_table(df, right_align_cols=["Revenue", "Orders"])
+    assert "<table" in html
+    assert "background-color: #EEF3F5" in html
+    assert "#0B1F4B" in html
+    assert "text-align: right" in html
+    assert "web" in html
+    assert "mobile" in html

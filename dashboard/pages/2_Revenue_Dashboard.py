@@ -1,6 +1,7 @@
 """Page 2: Revenue Overview (Executive Power BI Style)."""
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 
 from dashboard.lib.delta_reader import (
@@ -17,7 +18,12 @@ from dashboard.lib.metrics import (
     compute_top_customers,
     filter_by_date_range,
 )
-from dashboard.lib.ui_components import apply_theme, kpi_card, section_title
+from dashboard.lib.ui_components import (
+    apply_theme,
+    kpi_card,
+    render_html_table,
+    section_title,
+)
 
 st.set_page_config(page_title="Revenue Overview | PipelineSentinel", layout="wide", page_icon="💰")
 apply_theme()
@@ -159,8 +165,19 @@ with r2_col1:
             y=alt.Y("moving_avg_7d:Q", title=None),
             tooltip=[alt.Tooltip("moving_avg_7d:Q", title="7D Avg", format="$,.2f")],
         )
-        daily_chart = (bars + line).properties(height=260).configure_view(strokeWidth=0)
-        st.altair_chart(daily_chart, use_container_width=True)
+        daily_chart = (
+            (bars + line)
+            .properties(height=260, background="#FFFFFF")
+            .configure_view(strokeWidth=0)
+            .configure_axis(
+                labelColor="#2B3640",
+                labelFontSize=12,
+                titleColor="#2B3640",
+                titleFontSize=13,
+                gridColor="#DDE5E8",
+            )
+        )
+        st.altair_chart(daily_chart, use_container_width=True, theme=None)
     else:
         st.info("Daily revenue trend not available.")
 
@@ -187,7 +204,12 @@ with r2_col2:
                         "channel:N",
                         scale=alt.Scale(range=["#0F9D9A", "#0B1F4B", "#8EDCE0", "#5B6770"]),
                         title=None,
-                        legend=alt.Legend(orient="bottom", direction="horizontal"),
+                        legend=alt.Legend(
+                            orient="bottom",
+                            direction="horizontal",
+                            labelColor="#2B3640",
+                            labelFontSize=13,
+                        ),
                     ),
                     tooltip=[
                         alt.Tooltip("channel:N", title="Channel"),
@@ -195,10 +217,10 @@ with r2_col2:
                         alt.Tooltip("share_pct:Q", title="Share", format=".1f%"),
                     ],
                 )
-                .properties(width=280, height=260)
+                .properties(width=280, height=260, background="#FFFFFF")
                 .configure_view(strokeWidth=0)
             )
-            st.altair_chart(donut, use_container_width=False)
+            st.altair_chart(donut, use_container_width=False, theme=None)
     else:
         st.info("Channel breakdown not available.")
 
@@ -222,12 +244,25 @@ with r3_col1:
                     "customer_label:N",
                     sort="-x",
                     title=None,
-                    axis=alt.Axis(labelLimit=250, grid=False),
+                    axis=alt.Axis(
+                        labelLimit=250,
+                        grid=False,
+                        labelColor="#2B3640",
+                        labelFontSize=12,
+                    ),
                 ),
                 x=alt.X(
                     "customer_revenue:Q",
                     title="Revenue ($)",
-                    axis=alt.Axis(format="$,.0f", grid=True, gridColor="#DDE5E8"),
+                    axis=alt.Axis(
+                        format="$,.0f",
+                        grid=True,
+                        gridColor="#DDE5E8",
+                        labelColor="#2B3640",
+                        labelFontSize=12,
+                        titleColor="#2B3640",
+                        titleFontSize=13,
+                    ),
                 ),
                 tooltip=[
                     alt.Tooltip("name:N", title="Customer"),
@@ -236,10 +271,10 @@ with r3_col1:
                     alt.Tooltip("total_orders:Q", title="Orders"),
                 ],
             )
-            .properties(height=340)
+            .properties(height=340, background="#FFFFFF")
             .configure_view(strokeWidth=0)
         )
-        st.altair_chart(cust_bar, use_container_width=True)
+        st.altair_chart(cust_bar, use_container_width=True, theme=None)
     else:
         st.info("Customer metrics not available.")
 
@@ -247,24 +282,28 @@ with r3_col2:
     section_title("Channel Scorecard")
     scorecard_df = compute_channel_scorecard(cur_channel, prior_channel=prior_channel)
     if not scorecard_df.empty:
-        fmt_map = {
-            "Revenue": "${:,.2f}",
-            "Orders": "{:,}",
-            "Average Order Value": "${:,.2f}",
-            "Share %": "{:.1f}%",
-        }
-
-        # Format variance column safely
         scorecard_display = scorecard_df.copy()
+        scorecard_display["Revenue"] = scorecard_display["Revenue"].apply(lambda v: f"${v:,.2f}")
+        scorecard_display["Orders"] = scorecard_display["Orders"].apply(lambda v: f"{v:,}")
+        scorecard_display["Average Order Value"] = scorecard_display["Average Order Value"].apply(
+            lambda v: f"${v:,.2f}"
+        )
+        scorecard_display["Share %"] = scorecard_display["Share %"].apply(lambda v: f"{v:.1f}%")
         scorecard_display["vs Prior Period"] = scorecard_display["vs Prior Period"].apply(
             lambda v: f"{v:+.1f}%" if v is not None else "no prior period"
         )
-
-        st.dataframe(
-            scorecard_display.style.format(fmt_map),
-            use_container_width=True,
-            height=250,
-            hide_index=True,
+        st.write(
+            render_html_table(
+                scorecard_display,
+                right_align_cols=[
+                    "Revenue",
+                    "Orders",
+                    "Average Order Value",
+                    "Share %",
+                    "vs Prior Period",
+                ],
+            ),
+            unsafe_allow_html=True,
         )
     else:
         st.info("Channel scorecard data not available.")
@@ -286,16 +325,25 @@ with st.expander("View data", expanded=False):
     }
     view_df = cur_daily[cols_to_show].rename(columns=rename_map).sort_values(by="Batch Date")
 
-    view_fmt = {}
-    if "Total Revenue" in view_df.columns:
-        view_fmt["Total Revenue"] = "${:,.2f}"
-    if "Order Count" in view_df.columns:
-        view_fmt["Order Count"] = "{:,}"
-    if "Average Order Value" in view_df.columns:
-        view_fmt["Average Order Value"] = "${:,.2f}"
+    view_display = view_df.copy()
+    if "Total Revenue" in view_display.columns:
+        view_display["Total Revenue"] = view_display["Total Revenue"].apply(
+            lambda v: f"${v:,.2f}" if pd.notna(v) else "-"
+        )
+    if "Order Count" in view_display.columns:
+        view_display["Order Count"] = view_display["Order Count"].apply(
+            lambda v: f"{v:,}" if pd.notna(v) else "-"
+        )
+    if "Average Order Value" in view_display.columns:
+        view_display["Average Order Value"] = view_display["Average Order Value"].apply(
+            lambda v: f"${v:,.2f}" if pd.notna(v) else "-"
+        )
 
-    st.dataframe(
-        view_df.style.format(view_fmt),
-        use_container_width=True,
-        hide_index=True,
+    st.write(
+        render_html_table(
+            view_display,
+            right_align_cols=["Total Revenue", "Order Count", "Average Order Value"],
+            max_height="320px",
+        ),
+        unsafe_allow_html=True,
     )

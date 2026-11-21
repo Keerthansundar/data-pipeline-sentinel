@@ -16,6 +16,7 @@ from dashboard.lib.ops_db import OpsDbAdapter
 from dashboard.lib.ui_components import (
     apply_theme,
     kpi_card,
+    render_html_table,
     section_title,
     status_pill,
 )
@@ -126,12 +127,21 @@ with r2_col1:
                     axis=alt.Axis(
                         labelAngle=-45 if len(batch_dur_df) > 10 else 0,
                         grid=False,
+                        labelColor="#2B3640",
+                        labelFontSize=12,
                     ),
                 ),
                 y=alt.Y(
                     "total_duration_sec:Q",
                     title="Duration (s)",
-                    axis=alt.Axis(grid=True, gridColor="#DDE5E8"),
+                    axis=alt.Axis(
+                        grid=True,
+                        gridColor="#DDE5E8",
+                        labelColor="#2B3640",
+                        labelFontSize=12,
+                        titleColor="#2B3640",
+                        titleFontSize=13,
+                    ),
                 ),
                 tooltip=[
                     alt.Tooltip("batch_date:O", title="Batch"),
@@ -139,10 +149,10 @@ with r2_col1:
                     alt.Tooltip("status:N", title="Status"),
                 ],
             )
-            .properties(height=230)
+            .properties(height=230, background="#FFFFFF")
             .configure_view(strokeWidth=0)
         )
-        st.altair_chart(dur_chart, use_container_width=True)
+        st.altair_chart(dur_chart, use_container_width=True, theme=None)
     else:
         st.info("No run duration data available.")
 
@@ -162,12 +172,23 @@ with r2_col2:
                     "stage:N",
                     sort=["1. Orders In", "2. Clean Orders", "3. Quarantined", "4. Gold Orders"],
                     title=None,
-                    axis=alt.Axis(grid=False),
+                    axis=alt.Axis(
+                        grid=False,
+                        labelColor="#2B3640",
+                        labelFontSize=12,
+                    ),
                 ),
                 x=alt.X(
                     "count:Q",
                     title="Row Count",
-                    axis=alt.Axis(grid=True, gridColor="#DDE5E8"),
+                    axis=alt.Axis(
+                        grid=True,
+                        gridColor="#DDE5E8",
+                        labelColor="#2B3640",
+                        labelFontSize=12,
+                        titleColor="#2B3640",
+                        titleFontSize=13,
+                    ),
                 ),
                 color=alt.Color(
                     "stage:N",
@@ -188,10 +209,10 @@ with r2_col2:
                     alt.Tooltip("pct_of_in:Q", title="Share of In", format=".1f%"),
                 ],
             )
-            .properties(height=230)
+            .properties(height=230, background="#FFFFFF")
             .configure_view(strokeWidth=0)
         )
-        st.altair_chart(flow_chart, use_container_width=True)
+        st.altair_chart(flow_chart, use_container_width=True, theme=None)
     else:
         st.info("No batch row flow available.")
 
@@ -229,7 +250,7 @@ with r3_col1:
                 }
             )
         df_dq_disp = pd.DataFrame(dq_display_rows)
-        st.write(df_dq_disp.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.write(render_html_table(df_dq_disp), unsafe_allow_html=True)
     else:
         st.info("No Data Quality check records found.")
 
@@ -262,7 +283,13 @@ with r3_col2:
                 }
             )
         df_run_disp = pd.DataFrame(run_display_rows)
-        st.write(df_run_disp.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.write(
+            render_html_table(
+                df_run_disp,
+                right_align_cols=["Duration", "Orders In", "Quarantined", "Retries"],
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         st.info("No pipeline run records found.")
 
@@ -285,6 +312,9 @@ with st.expander("Technical details", expanded=False):
             ]
             if c in df_all_runs.columns
         ]
-        st.dataframe(df_all_runs[cols_available], use_container_width=True, hide_index=True)
+        st.write(
+            render_html_table(df_all_runs[cols_available], max_height="320px"),
+            unsafe_allow_html=True,
+        )
     else:
         st.info("No run logs available.")

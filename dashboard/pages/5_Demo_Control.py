@@ -8,7 +8,7 @@ from dashboard.lib.ui_components import apply_theme
 st.set_page_config(page_title="Demo Control | PipelineSentinel", layout="wide", page_icon="🎛️")
 apply_theme()
 
-st.title("🎛️ Demo Control Center")
+st.title("Demo Control Center")
 st.markdown(
     "Inject deterministic failure modes, update demo configuration, and get exact execution commands."
 )

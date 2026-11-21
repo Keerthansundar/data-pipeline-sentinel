@@ -171,3 +171,29 @@ This document records key technical decisions, rationale, and consequences for P
 - **Rationale:** Delivers 5-second business comprehension for stakeholders, enforces strict calculation purity, prevents visual clutter and unhandled data exceptions, and guarantees reproducible metrics across operational and financial views.
 - **Date:** 2026-11-21
 
+---
+
+### DECISION-014: Dashboard Chart Rendering Fixes, Batch-Level Observability, and WCAG AA Visibility Pass
+- **Decision:** Implement Phase 6 final hardening across data pipelines, chart rendering, and visual presentation:
+  1. **Altair Chart Rendering & Sizing:**
+     - Resolved donut chart blank rendering by eliminating Vega-Lite `width: "container"` collision on `mark_arc()`, enforcing explicit width/height dimensions (`280x260`) and `stack=True` on theta.
+     - Resolved empty `Run Duration by Batch` marks by replacing continuous millisecond `:T` encoding with discrete `:O` (ordinal) band encoding and dedicated bar sizing.
+     - Resolved `Latest Batch Row Flow` missing marks by replacing untyped `scale: null` colors with explicit domain-mapped nominal scale colors and discrete stage sorting.
+     - Upgraded `Daily Revenue` dual-layer chart with fixed bar sizing (`size=12`), visible navy 7-day rolling average line (`strokeWidth=3.0`), light `#DDE5E8` gridlines, and date intervals.
+     - Expanded `Top 10 Customers` chart height to 340px with 250px label limits and truncated customer names to display all 10 ranked customer labels cleanly.
+     - Injected `theme=None` and explicit white backgrounds (`#FFFFFF`) on all Altair charts to prevent dark theme style bleeding.
+  2. **Silver-Accurate Quarantine Rate & Per-Batch Grouping:**
+     - Updated `compute_pipeline_health_kpis` to read the `silver_transform` task instance (or sum across tasks for the batch) rather than `gold_build`'s trailing 0, yielding the accurate 0.52% quarantine rate for batch 2026-10-02 (26 / 5,000 orders).
+     - Grouped `pipeline_run_log` entries by `(dag_run_id, batch_date)` in `group_runs_by_batch` to present unified batch-level execution summaries in Recent Runs and synchronize duration totals with `Run Duration by Batch`.
+  3. **Batch Cleanup Utility (`tests/cleanup_batch.py`):**
+     - Developed safe administrative cleanup script that deletes a specified batch date (e.g. stray `2026-11-01`) from Delta tables using atomic Delta `DELETE` predicates (`_batch_date = '<batch_date>'`) and purges corresponding records from Postgres Ops DB tables with cascading integrity.
+  4. **WCAG AA Executive Visibility & Readability Theme (`apply_theme`):**
+     - Enhanced typography scale: base text >= 15px, KPI label 13px uppercase in `#3D4852`, KPI value 32px bold in navy `#0B1F4B`, section titles 18px weight 600, table body 14px, table headers 13px bold in `#EEF3F5`, captions 13px in `#4A5560`.
+     - High-contrast status pills: green text `#0B6B45` on `#DDF3E8`, red text `#A12727` on `#FBE1E1`, amber text `#8A5A00` on `#FFF1CC`.
+     - Controls & Segmented Controls: 1px `#B7C4CA` border, 40px min-height, white fill, navy text, teal `#0F9D9A` active selection with white text, `#E3F4F4` hover state, and visible focus rings.
+     - Replaced `st.dataframe` on redesigned pages with `render_html_table()` supporting zebra striping, row hover, and right-aligned numbers.
+     - Light Streamlit header matching page background with dark text, dark navy `#0B1F4B` sidebar with `#E8EEF2` text and active page highlight.
+- **Rationale:** Guarantees zero blank charts or visual regressions on real Delta Lake data, accurately reflects operational pipeline quality metrics, ensures WCAG AA readability, and provides tools for Delta table hygiene.
+- **Date:** 2026-11-21
+
+

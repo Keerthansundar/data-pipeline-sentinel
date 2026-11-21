@@ -12,7 +12,7 @@ from responder.validate import validate_evidence_citations
 st.set_page_config(page_title="Incident Audit | PipelineSentinel", layout="wide", page_icon="🔍")
 apply_theme()
 
-st.title("🔍 Incident Audit & Investigation Explorer")
+st.title("Incident Audit & Investigation Explorer")
 st.markdown(
     "Detailed audit trails for failed pipeline runs, OpenAI agent tool calls, sandbox verification, and patch proposals."
 )
