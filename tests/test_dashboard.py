@@ -267,3 +267,167 @@ def test_delta_reader_real_schema_customer_summary():
         assert "lifetime_revenue" in df.columns  # Alias
         assert "lifetime_orders" in df.columns  # Alias
         assert df["customer_revenue"].sum() == 2350.50
+
+
+def test_metrics_variance_and_filter():
+    """Verify variance calculation and date filtering logic."""
+    from dashboard.lib.metrics import calculate_variance_pct, filter_by_date_range
+
+    # Variance tests
+    assert calculate_variance_pct(110.0, 100.0) == 10.0
+    assert calculate_variance_pct(80.0, 100.0) == -20.0
+    assert calculate_variance_pct(100.0, None) is None
+    assert calculate_variance_pct(100.0, 0.0) is None  # Guard against div by zero
+
+    # Filter by date range tests
+    dates = [f"2026-10-{d:02d}" for d in range(1, 15)]  # 14 dates
+    df = pd.DataFrame({"order_date": dates, "val": range(14)})
+
+    cur, prior = filter_by_date_range(df, "Last 7 days")
+    assert cur["order_date"].nunique() == 7
+    assert prior is not None
+    assert prior["order_date"].nunique() == 7
+    assert cur["order_date"].min() == "2026-10-08"
+    assert prior["order_date"].max() == "2026-10-07"
+
+    # All dates test
+    cur_all, prior_all = filter_by_date_range(df, "All dates")
+    assert len(cur_all) == 14
+    assert prior_all is None
+
+
+def test_metrics_revenue_scorecard_and_customers():
+    """Verify executive scorecard aggregation and customer name resolution."""
+    from dashboard.lib.metrics import (
+        compute_channel_scorecard,
+        compute_daily_revenue_trend,
+        compute_revenue_kpis,
+        compute_top_customers,
+    )
+
+    df_daily = pd.DataFrame(
+        {
+            "order_date": [f"2026-10-{d:02d}" for d in range(1, 11)],
+            "total_revenue": [1000.0] * 10,
+            "order_count": [10] * 10,
+        }
+    )
+    df_cust = pd.DataFrame(
+        {
+            "customer_id": ["C1", "C2", "C1"],
+            "customer_revenue": [500.0, 1000.0, 200.0],
+            "total_orders": [2, 4, 1],
+        }
+    )
+
+    kpis = compute_revenue_kpis(df_daily, df_cust)
+    assert kpis["total_revenue"] == 10000.0
+    assert kpis["total_orders"] == 100
+    assert kpis["avg_order_value"] == 100.0
+    assert kpis["active_customers"] == 2
+
+    # Trend moving average
+    trend = compute_daily_revenue_trend(df_daily)
+    assert "moving_avg_7d" in trend.columns
+    assert len(trend) == 10
+    assert trend["moving_avg_7d"].iloc[-1] == 1000.0
+
+    # Top customers
+    lookup = {"C1": {"name": "Customer One"}, "C2": {"name": "Customer Two"}}
+    top = compute_top_customers(df_cust, customer_names=lookup, limit=5)
+    assert len(top) == 2
+    assert top["name"].iloc[0] == "Customer Two"  # 1000 revenue vs 700
+    assert "Customer Two (C2)" in top["customer_label"].iloc[0]
+
+    # Channel scorecard
+    df_chan = pd.DataFrame(
+        {
+            "channel": ["web", "mobile"],
+            "channel_revenue": [6000.0, 4000.0],
+            "order_count": [60, 40],
+        }
+    )
+    sc = compute_channel_scorecard(df_chan)
+    assert len(sc) == 2
+    assert sc["Share %"].iloc[0] == 60.0
+    assert sc["Average Order Value"].iloc[0] == 100.0
+
+
+def test_metrics_pipeline_health_status():
+    """Verify one-line pipeline status banner logic."""
+    from dashboard.lib.metrics import (
+        compute_batch_durations,
+        compute_latest_row_flow,
+        compute_pipeline_health_kpis,
+        compute_pipeline_status,
+    )
+
+    # 1. Failing status
+    st_fail = compute_pipeline_status(
+        {"status": "FAILED"}, hours_since_refresh=2.0, open_incident_count=1
+    )
+    assert st_fail["kind"] == "failing"
+    assert st_fail["title"] == "Failing"
+
+    # 2. Stale data status
+    st_stale = compute_pipeline_status(
+        {"status": "SUCCESS"}, hours_since_refresh=30.0, open_incident_count=0
+    )
+    assert st_stale["kind"] == "attention"
+    assert "stale" in st_stale["detail"].lower()
+
+    # 3. Open incident status
+    st_inc = compute_pipeline_status(
+        {"status": "SUCCESS"}, hours_since_refresh=5.0, open_incident_count=2
+    )
+    assert st_inc["kind"] == "attention"
+    assert "2 open" in st_inc["detail"]
+
+    # 4. Healthy status
+    st_ok = compute_pipeline_status(
+        {"status": "SUCCESS"}, hours_since_refresh=5.0, open_incident_count=0
+    )
+    assert st_ok["kind"] == "healthy"
+    assert st_ok["title"] == "All systems healthy"
+
+    # KPI calculations
+    now = datetime.now()
+    runs = [
+        {
+            "task_id": "gold_build",
+            "batch_date": "2026-10-01",
+            "status": "SUCCESS",
+            "rows_in": 5000,
+            "rows_out": 4974,
+            "rows_quarantined": 26,
+            "started_at": now,
+            "ended_at": now,
+        }
+    ]
+    hkpis = compute_pipeline_health_kpis(runs, last_refresh=now, resolved_by_retry=3)
+    assert hkpis["last_run_status"] == "SUCCESS"
+    assert hkpis["success_rate"] == 100.0
+    assert hkpis["resolved_by_retry"] == 3
+    assert abs(hkpis["quarantine_rate"] - (26.0 / 5000.0 * 100.0)) < 0.01
+
+    # Batch durations and row flow
+    dur_df = compute_batch_durations(runs)
+    assert not dur_df.empty
+
+    flow = compute_latest_row_flow(runs)
+    assert len(flow) == 4
+    assert flow[0]["stage"] == "1. Orders In"
+    assert flow[0]["count"] == 5000
+
+
+def test_ui_components_status_pill():
+    """Verify status_pill rendering."""
+    from dashboard.lib.ui_components import status_pill
+
+    pill_pass = status_pill("Pass", "success")
+    assert "Pass" in pill_pass
+    assert "#116943" in pill_pass
+
+    pill_fail = status_pill("Fail", "error")
+    assert "Fail" in pill_fail
+    assert "#991B1B" in pill_fail

@@ -5,9 +5,14 @@ import streamlit as st
 
 from dashboard.lib.airflow_meta import AirflowMetaAdapter
 from dashboard.lib.ops_db import OpsDbAdapter
-from dashboard.lib.ui_components import generate_pipeline_graph_dot, render_status_pill
+from dashboard.lib.ui_components import (
+    apply_theme,
+    generate_pipeline_graph_dot,
+    render_status_pill,
+)
 
 st.set_page_config(page_title="Live Run Monitor | PipelineSentinel", layout="wide", page_icon="🛡️")
+apply_theme()
 
 st.title("🛡️ Live Run Monitor")
 st.markdown("Real-time Airflow backend stages, DAG execution graphs, and task instance monitoring.")

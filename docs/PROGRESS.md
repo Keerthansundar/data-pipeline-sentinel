@@ -17,8 +17,9 @@
   - Read-only tools, diagnosis schema, Pydantic validation, policy enforcement, and 12 Section 8 guardrails verified (32 unit tests pass).
 - **Phase 5 (Fix Generation, Sandbox, PR, & Notifications):** 100% COMPLETE & VERIFIED (commit `d50ec5f`).
   - Minimal diff YAML patcher, isolated sandbox transform, dual-mode PR dispatch, HTML notification email engine, and 9-task incident responder DAG.
-- **Phase 6 (Streamlit Dashboard):** 100% COMPLETE & VERIFIED (commit `a2120ce`, updated with real Gold schemas & hot-reload mounts).
-  - 5-page operational monitor: Live Run Monitor (Task Instances view without backticks, colored pipeline graph, search/filter, logs, auto-refresh), Revenue Dashboard (real Gold schemas `daily_revenue`, `revenue_by_channel`, `customer_summary` via zero-JVM Delta Lake reader), Pipeline Health, Incident Audit (`pr_url_or_preview` column alignment), Demo Control.
+- **Phase 6 (Streamlit Dashboard):** 100% COMPLETE & VERIFIED (commits `a2120ce`, `f79f314`, and Executive Power BI redesign).
+  - 5-page operational monitor: Live Run Monitor (Task Instances view without backticks, colored pipeline graph, search/filter, logs, auto-refresh), Revenue Dashboard (executive Power BI layout, KPI cards with prior-period variance, 7-day rolling moving average trend, channel donut, lifetime customer ranking, channel scorecard), Pipeline Health (system status banner, KPI cards, batch durations, row flow funnel, DQ checks, recent runs), Incident Audit (`pr_url_or_preview` column alignment), Demo Control.
+  - Pure calculation engine (`dashboard/lib/metrics.py`), shared UI styling (`dashboard/lib/ui_components.py`), zero-JVM cross-batch customer name resolver (`dashboard/lib/delta_reader.py`), and 56 passing unit tests.
 - **Phase 7 (Polish & Documentation):** 100% COMPLETE & VERIFIED.
   - Comprehensive `README.md` (Section 13) with Mermaid architecture & sequence diagrams, quickstart, UI tour, demo script, and configuration reference.
   - Detailed `docs/architecture.md`, `docs/runbook.md`, and automated `.github/workflows/ci.yml`.

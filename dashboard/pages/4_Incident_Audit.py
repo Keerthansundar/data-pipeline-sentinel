@@ -5,11 +5,12 @@ import json
 import streamlit as st
 
 from dashboard.lib.ops_db import OpsDbAdapter
-from dashboard.lib.ui_components import render_status_pill
+from dashboard.lib.ui_components import apply_theme, render_status_pill
 from responder.redact import redact_text
 from responder.validate import validate_evidence_citations
 
 st.set_page_config(page_title="Incident Audit | PipelineSentinel", layout="wide", page_icon="🔍")
+apply_theme()
 
 st.title("🔍 Incident Audit & Investigation Explorer")
 st.markdown(

@@ -2,12 +2,15 @@
 
 import streamlit as st
 
+from dashboard.lib.ui_components import apply_theme
+
 st.set_page_config(
     page_title="PipelineSentinel Dashboard",
     layout="wide",
     page_icon="🛡️",
     initial_sidebar_state="expanded",
 )
+apply_theme()
 
 st.title("🛡️ PipelineSentinel: Self-Healing Medallion Data Pipeline")
 st.markdown(

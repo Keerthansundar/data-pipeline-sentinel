@@ -134,3 +134,40 @@ This document records key technical decisions, rationale, and consequences for P
   5. **Streamlit Development Hot-Reloading:** Updated `docker-compose.yml` to bind-mount `./dashboard`, `./pipeline:ro`, `./responder:ro`, and `./config:ro` into `/app` so subsequent dashboard or responder modifications reflect immediately on browser page reload without requiring container rebuilds.
 - **Rationale:** Resolves runtime KeyError exceptions on real Gold data, ensures metrics accurately reflect business reality, eliminates backtick noise in tables, and improves developer velocity.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-013: Executive Power BI Dashboard Redesign and Pure Metrics Engine
+- **Decision:** Redesign the Streamlit application (`Revenue Dashboard` and `Pipeline Health`) into clean, minimal, executive-style dashboards mirroring modern Power BI reporting, and extract business calculations into a pure, testable metrics library:
+  1. **Executive Visual Design Language (`dashboard/lib/ui_components.py`):**
+     - Injected centralized executive theme styling (`apply_theme()`) across all 5 dashboard pages with a clean light background (`#F4F7F8`), navy section headers (`#0B1F4B`), teal primary indicators (`#0F9D9A`), light teal accents (`#8EDCE0`), white rounded card containers (`#FFFFFF`, border-radius 8px, soft shadow `0 1px 3px rgba(0,0,0,0.06)`), and muted body text (`#5B6770`).
+     - Standardized executive KPI cards (`kpi_card()`) with uppercase small grey labels, large bold metrics, and color-coded variance pills (`#1E9E6A` green for favorable, `#D64545` red for unfavorable, neutral grey for flat/unspecified).
+     - Standardized section titles without emojis (`section_title()`) and reusable semantic status pills (`status_pill()`).
+  2. **Pure Metrics Engine (`dashboard/lib/metrics.py`):**
+     - Fully decoupled statistical and aggregation logic from Streamlit rendering into pure Python functions.
+     - Defined explicit business thresholds as named constants: `STALE_DATA_HOURS = 26.0`, `MAX_UNPARSEABLE_RATIO = 0.01`, `MAX_NULL_RATE = 0.25`, and standard `DATE_RANGES`.
+     - Calculated data-driven prior-period variances (`calculate_variance_pct()`) by comparing selected date windows against equal-length immediately preceding periods (e.g. Last 7 days vs prior 7 days), with zero-division and missing-prior safety. No invented targets or forecast budgets.
+     - Pure calculations for:
+       - 7-day rolling moving average daily revenue trend (`compute_daily_revenue_trend()`).
+       - Channel scorecard with revenue share percentage and period-over-period variance (`compute_channel_scorecard()`).
+       - Lifetime customer value aggregated across all historic batches (`compute_top_customers()`).
+       - Pipeline status banner evaluation (`compute_pipeline_status()`) returning "All systems healthy", "Needs attention", or "Failing".
+       - Operational health KPIs (`compute_pipeline_health_kpis()`) including success rates, freshness hours, quarantine ratios, and retry resolution counts.
+       - Funnel row flow tracking across Bronze, Silver clean, and quarantined partitions (`compute_latest_row_flow()`).
+  3. **Altair Visualizations:**
+     - Utilized bundled Altair charting to render:
+       - Dual-layer Daily Revenue bar chart with an overlayed 7-day rolling average line and auto-scaled Y-axis starting at dynamic minima.
+       - Revenue by Channel donut chart with custom tooltip formatting.
+       - Top 10 Customers lifetime revenue horizontal bar chart.
+       - Batch duration bar chart with threshold coloring.
+       - Latest batch row flow funnel chart.
+  4. **Cross-Batch Customer Resolution (`dashboard/lib/delta_reader.py`):**
+     - Implemented `get_customer_lookup_map()` to index all historical customer names across batch partitions in `data/silver/customers` (falling back to `data/bronze/customers`).
+     - Resolves missing customer names in Gold daily snapshots resulting from synthetic customer sampling, preventing `None` or missing labels in the executive dashboard.
+  5. **Git Tracking Correction:**
+     - Updated `.gitignore` with `!dashboard/lib/` to properly track dashboard helper libraries while maintaining root `lib/` directory exclusion.
+  6. **Comprehensive Unit Testing (`tests/test_dashboard.py`):**
+     - Expanded unit test suite to 56 tests covering variance calculation, rolling averages, channel scorecards, empty data fallbacks, status evaluation rules, and component generation.
+- **Rationale:** Delivers 5-second business comprehension for stakeholders, enforces strict calculation purity, prevents visual clutter and unhandled data exceptions, and guarantees reproducible metrics across operational and financial views.
+- **Date:** 2026-11-21
+

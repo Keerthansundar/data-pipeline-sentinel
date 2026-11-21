@@ -3,8 +3,10 @@
 import streamlit as st
 
 from dashboard.lib.ops_db import OpsDbAdapter
+from dashboard.lib.ui_components import apply_theme
 
 st.set_page_config(page_title="Demo Control | PipelineSentinel", layout="wide", page_icon="🎛️")
+apply_theme()
 
 st.title("🎛️ Demo Control Center")
 st.markdown(
