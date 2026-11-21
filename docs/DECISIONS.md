@@ -67,3 +67,16 @@ This document records key technical decisions, rationale, and consequences for P
   9. Vectorize Python/pandas transformations (date parsing via `pd.to_datetime` and boolean masks for quarantine routing) to avoid row-by-row iteration.
 - **Rationale:** Running Spark inside Docker on Windows Hyper-V with default settings spawned 16 concurrent worker threads and 50 shuffle partitions, causing severe thread contention, Py4J serialization stalls, and filesystem lock latency on small datasets (5,000 rows). Tuning parallelism, coalescing file writes, and eliminating multi-pass scans minimizes execution overhead.
 - **Date:** 2026-11-21
+
+---
+
+### DECISION-009: Incident Investigator Agent Architecture & Read-Only Guardrails
+- **Decision:** Implement autonomous incident diagnosis agent with strict read-only tool boundaries:
+  1. The agent is provided only 7 read-only inspection tools (`fetch_task_error_log`, `fetch_run_history`, `inspect_column_profile`, `diff_schema_vs_last_good_batch`, `fetch_data_quality_results`, `trace_downstream_impact`, `read_silver_rules`) plus `submit_incident_diagnosis`.
+  2. Tools never throw unhandled exceptions, returning structured "no data available" responses when database or log entries are absent.
+  3. Strict evidence-citation check: Every quote in `diagnosis.evidence` must match verbatim (<= 200 chars) in the cited tool's output; hallucinated or altered quotes force immediate escalation.
+  4. Structured patch policy: Patches can only modify `config/silver_rules.yml` using `append_unique` on `orders.date_formats.order_date` (with whitelisted strptime formats) or `orders.column_aliases.<canonical>` (with validated identifiers).
+  5. Ambiguity guardrail: Any date format patch is rejected if `ambiguous_day_month_share > 0.00`.
+  6. Kill switch & fail-safe: `AGENT_ENABLED=false` or a missing `OPENAI_API_KEY` bypasses LLM execution and forces safe escalation. Loop bounded by 8 tool calls.
+- **Rationale:** Section 7 and Section 8 require absolute guardrails ensuring LLM cannot execute side-effects, mutate pipeline state, or hallucinate fixes.
+- **Date:** 2026-11-21

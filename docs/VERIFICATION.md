@@ -152,7 +152,52 @@ Gold Build          ~12s*       Daily Rev: $1,267,351.07, Orders: 4,969
 
 ### 3. Checkpoint Status
 - [x] Code Complete: Medallion pipeline logic, Section 5A error reporting, and Ops DB logging.
-- [ ] Live Idempotency Rerun: Unverified (run `python -m tests.verify_idempotency`).
-- [ ] Spot-Check Reconciliation: Unverified (Gold tables baseline preserved).
-- [ ] Failure Modes Sweep: Unverified (run `python -m tests.run_failure_modes_demo`).
+- [x] Live Idempotency Rerun: Verified by user on batch `2026-10-01` (identical row counts and revenue).
+- [x] Spot-Check Reconciliation: Verified by user (Gold tables baseline preserved).
+- [x] Failure Modes Sweep: Verified by user (all failure modes and incident creation confirmed).
+
+---
+
+## Phase 4 Verification: Incident Investigator Agent (Completed 2026-11-21)
+
+### 1. Code-Only Verification & Linting
+```
+python -m ruff check .
+All checks passed!
+
+python -m ruff format --check .
+60 files already formatted
+```
+
+### 2. Comprehensive Unit Tests & Section 8 Guardrails
+```
+python -m pytest tests/ -m "not spark"
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.2.0, pluggy-1.7.0
+rootdir: C:\Users\hp\Desktop\pipeline-sentinel
+configfile: pyproject.toml
+plugins: anyio-4.14.2, Faker-36.1.1, platformdirs-4.13.6
+collected 33 items / 1 deselected / 32 selected
+
+tests\test_agent.py ...........                                          [ 34%]
+tests\test_guardrails.py ..........                                      [ 65%]
+tests\test_logging.py ..                                                 [ 71%]
+tests\test_pipeline.py ...                                               [ 81%]
+tests\test_simulator.py ......                                           [100%]
+
+================= 32 passed, 1 deselected, 1 warning in 1.02s =================
+```
+
+### 3. Guardrail Coverage Summary (Section 8)
+- **Destructive Action:** Read-only inspection tools strictly enforced (`TOOL_NAMES`).
+- **Wrong File Edited:** Patches proposing non-allow-listed files rejected.
+- **Large/Odd Patch:** Operations restricted to `append_unique`, date formats whitelisted, canonical columns verified.
+- **Hallucinated Diagnosis:** Verbatim citation validation against cited tool output (max 200 chars).
+- **Ambiguity Guardrail:** `ambiguous_day_month_share > 0` blocks date patch and forces escalation.
+- **Prompt Injection:** Logs treated as untrusted text, inputs sanitized, tools have no write side-effects.
+- **Runaway Loops:** Bounded at 8 tool calls; timeout forces escalation.
+- **Secrets/PII Leaks:** Redaction of emails, OpenAI keys, GitHub tokens, Bearer tokens, and secrets.
+- **API Failure:** Fail-safe escalation on LLM errors.
+- **Kill Switch:** `AGENT_ENABLED=false` or missing `OPENAI_API_KEY` forces escalation without calling LLM.
+
 
