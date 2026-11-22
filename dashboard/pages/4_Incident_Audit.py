@@ -7,7 +7,6 @@ import streamlit as st
 from dashboard.lib.ops_db import OpsDbAdapter
 from dashboard.lib.ui_components import apply_theme, render_status_pill
 from responder.redact import redact_text
-from responder.validate import validate_evidence_citations
 
 st.set_page_config(page_title="Incident Audit | PipelineSentinel", layout="wide", page_icon="🔍")
 apply_theme()
@@ -100,25 +99,24 @@ if diag_data:
     # Evidence & Citation Check
     st.markdown("#### 📜 Cited Evidence & Verification")
     evidence_items = diag_data.get("evidence", [])
-    tool_outputs_map = {str(tc["step"]): tc.get("output_truncated", "") for tc in tool_calls}
-    for tc in tool_calls:
-        tool_outputs_map[f"call_{tc['step']}"] = tc.get("output_truncated", "")
 
-    # Run citation check against recorded tool outputs
-    from responder.schemas import IncidentDiagnosis
-
-    try:
-        diag_obj = IncidentDiagnosis.model_validate(diag_data)
-        cit_ok, cit_err = validate_evidence_citations(diag_obj, tool_outputs_map)
-    except Exception as exc:
-        cit_ok, cit_err = False, str(exc)
+    stored = audit.get("validation_results") if audit else {}
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except Exception:
+            stored = {}
+    stored = stored or {}
+    cit_ok = bool(stored.get("passed", False))
+    cit_err = stored.get("error") or "no stored validation result"
 
     if cit_ok:
         st.success(
-            "✅ **Citation Verification Passed:** All evidence quotes match cited tool outputs verbatim (<=200 chars)."
+            "Citation verification passed when the agent ran: every evidence quote "
+            "matched the recorded tool output."
         )
     else:
-        st.error(f"❌ **Citation Verification Failed:** {cit_err}")
+        st.error(f"Citation verification failed: {cit_err}")
 
     if evidence_items:
         for idx, ev in enumerate(evidence_items, 1):
@@ -170,7 +168,9 @@ if diag_data.get("patch"):
         except Exception:
             sb_res = {}
 
-    if sb_res:
+    if sb_res and sb_res.get("skipped"):
+        st.caption("Sandbox not run (no patch proposed).")
+    elif sb_res:
         st.markdown("#### 🧪 Isolated Sandbox Metrics")
         scol1, scol2, scol3, scol4 = st.columns(4)
         with scol1:
