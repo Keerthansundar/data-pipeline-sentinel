@@ -382,7 +382,9 @@ def diagnose_incident(
                 ambiguity_share = float(p.get("ambiguous_day_month_share", 0.0))
                 break
 
-        policy_valid, policy_err = enforce_patch_policy(diagnosis, ambiguity_share)
+        policy_valid, policy_err = enforce_patch_policy(
+            diagnosis, ambiguity_share, batch_date=batch_date
+        )
         pol_results = {"passed": policy_valid, "error": policy_err}
         if not policy_valid:
             logger.warning(

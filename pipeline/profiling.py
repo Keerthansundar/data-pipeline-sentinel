@@ -88,7 +88,7 @@ def profile_batch(batch_date: str, pdf: Any | None = None) -> dict[str, Any]:
                             pass
                 ambiguous_share = float(ambiguous_slash_count / len(slash_dates))
 
-            patterns["ambiguous_slash_count"] = len(slash_dates) if slash_dates else 0
+            patterns["ambiguous_slash_count"] = ambiguous_slash_count
 
         profiles[col] = {
             "total_rows": total_rows,

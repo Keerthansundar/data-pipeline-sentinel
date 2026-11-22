@@ -162,7 +162,7 @@ class OpsRepository:
             return []
 
     def get_column_profiles(self, batch_date: str) -> list[dict[str, Any]]:
-        """Fetch column profiles for a specific batch date."""
+        """Fetch column profiles for a specific batch date, returning newest per (table_name, column_name)."""
         conn = self._get_connection()
         if not conn:
             return []
@@ -171,18 +171,35 @@ class OpsRepository:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT batch_date, table_name, column_name, total_rows,
+                        SELECT DISTINCT ON (table_name, column_name)
+                               batch_date, table_name, column_name, total_rows,
                                null_count, null_rate, distinct_count, patterns,
-                               ambiguous_day_month_share
+                               ambiguous_day_month_share, created_at, id
                         FROM column_profile
                         WHERE batch_date = %s
-                        ORDER BY column_name;
+                        ORDER BY table_name, column_name, created_at DESC, id DESC;
                         """,
                         (batch_date,),
                     )
                     rows = cur.fetchall()
                     cols = [desc[0] for desc in cur.description]
-                    return [dict(zip(cols, row, strict=False)) for row in rows]
+                    all_profiles = [dict(zip(cols, row, strict=False)) for row in rows]
+                    all_profiles.sort(
+                        key=lambda x: (
+                            x.get("created_at") is not None,
+                            x.get("created_at"),
+                            x.get("id", 0) or 0,
+                        ),
+                        reverse=True,
+                    )
+                    seen: set[tuple[str, str]] = set()
+                    result: list[dict[str, Any]] = []
+                    for p in all_profiles:
+                        key = (str(p.get("table_name", "")), str(p.get("column_name", "")))
+                        if key not in seen:
+                            seen.add(key)
+                            result.append(p)
+                    return sorted(result, key=lambda x: str(x.get("column_name", "")))
         except Exception as exc:
             logger.error("Error fetching column profile for %s: %s", batch_date, exc)
             return []

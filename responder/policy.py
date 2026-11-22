@@ -1,9 +1,10 @@
 """Patch policy enforcement: file allow-list, key path, whitelist, ambiguity checks."""
 
+import csv
 import re
 from typing import Any
 
-from pipeline.config import load_yaml_config
+from pipeline.config import get_project_root, load_yaml_config
 from responder.schemas import IncidentDiagnosis, ProposedAction, RootCauseCategory
 
 DATE_FORMAT_WHITELIST = [
@@ -26,6 +27,53 @@ ALLOWED_CANONICAL_COLUMNS = [
 ]
 
 
+def compute_source_ambiguity(batch_date: str) -> float | None:
+    """Compute day/month ambiguity ratio directly from landing or source_archive CSV.
+
+    Among order_date values matching ^\\d{2}/\\d{2}/\\d{4}, returns:
+    (count where both first and second part <= 12) / (count of slash values).
+    Returns 0.0 if there are no slash values.
+    Returns None if the source file is missing or unreadable.
+    """
+    root = get_project_root()
+    landing_path = root / "data" / "landing" / f"orders_{batch_date}.csv"
+    archive_path = root / "data" / "source_archive" / f"orders_{batch_date}.csv"
+
+    file_path = None
+    if landing_path.is_file():
+        file_path = landing_path
+    elif archive_path.is_file():
+        file_path = archive_path
+    else:
+        return None
+
+    slash_re = re.compile(r"^\d{2}/\d{2}/\d{4}")
+    try:
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames or "order_date" not in reader.fieldnames:
+                return None
+            slash_count = 0
+            ambiguous_count = 0
+            for row in reader:
+                val = (row.get("order_date") or "").strip()
+                if slash_re.match(val):
+                    slash_count += 1
+                    parts = val.split("/")
+                    if len(parts) >= 2:
+                        try:
+                            p1, p2 = int(parts[0]), int(parts[1])
+                            if p1 <= 12 and p2 <= 12:
+                                ambiguous_count += 1
+                        except ValueError:
+                            pass
+            if slash_count == 0:
+                return 0.0
+            return float(ambiguous_count / slash_count)
+    except Exception:
+        return None
+
+
 def load_guardrails_config() -> dict[str, Any]:
     """Load policy configuration from config/guardrails.yml."""
     try:
@@ -35,13 +83,17 @@ def load_guardrails_config() -> dict[str, Any]:
 
 
 def enforce_patch_policy(
-    diagnosis: IncidentDiagnosis, ambiguous_ratio: float = 0.0
+    diagnosis: IncidentDiagnosis,
+    ambiguous_ratio: float = 0.0,
+    batch_date: str | None = None,
 ) -> tuple[bool, str | None]:
     """Check if proposed diagnosis and patch conform to safety policies.
 
     Args:
         diagnosis: Validated IncidentDiagnosis.
         ambiguous_ratio: Ambiguous day/month share for the batch date.
+        batch_date: Optional batch date string (YYYY-MM-DD). When provided and patch targets
+            order_date format, ambiguity is computed directly from source CSV file.
 
     Returns:
         Tuple of (is_allowed, rejection_reason).
@@ -99,11 +151,21 @@ def enforce_patch_policy(
     val = patch.value.strip()
 
     if key_path == "orders.date_formats.order_date":
+        effective_ambiguity = ambiguous_ratio
+        if batch_date is not None:
+            source_ambiguity = compute_source_ambiguity(batch_date)
+            if source_ambiguity is None:
+                return (
+                    False,
+                    "Policy violation: source file unavailable, cannot verify date ambiguity. Manual escalation required.",
+                )
+            effective_ambiguity = source_ambiguity
+
         # Check ambiguity rule
-        if ambiguous_ratio > max_ambiguity:
+        if effective_ambiguity > max_ambiguity:
             return (
                 False,
-                f"Policy violation: Date format patch blocked due to ambiguity share {ambiguous_ratio:.4f} > {max_ambiguity:.4f}. Manual escalation required.",
+                f"Policy violation: Date format patch blocked due to ambiguity share {effective_ambiguity:.4f} > {max_ambiguity:.4f}. Manual escalation required.",
             )
 
         if val not in date_whitelist:

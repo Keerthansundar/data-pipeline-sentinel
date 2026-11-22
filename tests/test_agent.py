@@ -739,3 +739,151 @@ def test_citation_check_escalate_without_patch_valid_with_all_evidence_dropped()
     assert cit_res[1] is None
     assert len(diag.evidence) == 0
     assert len(cit_res.dropped_items) == 1
+
+
+def test_policy_all_ambiguous_file_blocked(tmp_path, monkeypatch):
+    """Verify source ambiguity calculation blocks date format patch when all slash dates are ambiguous."""
+    from responder.policy import enforce_patch_policy
+    from responder.schemas import IncidentDiagnosis, ProposedAction, RootCauseCategory, RulesPatch
+
+    monkeypatch.setattr("responder.policy.get_project_root", lambda: tmp_path)
+    landing_dir = tmp_path / "data" / "landing"
+    landing_dir.mkdir(parents=True, exist_ok=True)
+    csv_file = landing_dir / "orders_2026-10-04.csv"
+    csv_file.write_text(
+        "order_id,customer_id,order_date,amount,channel\n"
+        "ORD-1,CUST-1,05/06/2026,100.0,online\n"
+        "ORD-2,CUST-2,07/08/2026,150.0,store\n",
+        encoding="utf-8",
+    )
+
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.95,
+        summary="Format drift detected",
+        impact="Silver stopped",
+        evidence=[],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch",
+    )
+
+    ok, err = enforce_patch_policy(diag, ambiguous_ratio=0.0, batch_date="2026-10-04")
+    assert ok is False
+    assert "Date format patch blocked due to ambiguity share" in (err or "")
+
+
+def test_policy_file_all_days_greater_than_12_allowed(tmp_path, monkeypatch):
+    """Verify source ambiguity allows date format patch when all slash dates have days > 12."""
+    from responder.policy import enforce_patch_policy
+    from responder.schemas import IncidentDiagnosis, ProposedAction, RootCauseCategory, RulesPatch
+
+    monkeypatch.setattr("responder.policy.get_project_root", lambda: tmp_path)
+    landing_dir = tmp_path / "data" / "landing"
+    landing_dir.mkdir(parents=True, exist_ok=True)
+    csv_file = landing_dir / "orders_2026-10-04.csv"
+    csv_file.write_text(
+        "order_id,customer_id,order_date,amount,channel\n"
+        "ORD-1,CUST-1,21/10/2026,100.0,online\n"
+        "ORD-2,CUST-2,25/11/2026,150.0,store\n",
+        encoding="utf-8",
+    )
+
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.95,
+        summary="Format drift detected",
+        impact="Silver stopped",
+        evidence=[],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch",
+    )
+
+    ok, err = enforce_patch_policy(diag, ambiguous_ratio=0.0, batch_date="2026-10-04")
+    assert ok is True
+    assert err is None
+
+
+def test_policy_missing_source_file_blocked(tmp_path, monkeypatch):
+    """Verify policy blocks date format patch when source file is missing."""
+    from responder.policy import enforce_patch_policy
+    from responder.schemas import IncidentDiagnosis, ProposedAction, RootCauseCategory, RulesPatch
+
+    monkeypatch.setattr("responder.policy.get_project_root", lambda: tmp_path)
+
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.95,
+        summary="Format drift detected",
+        impact="Silver stopped",
+        evidence=[],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch",
+    )
+
+    ok, err = enforce_patch_policy(diag, ambiguous_ratio=0.0, batch_date="2026-10-99")
+    assert ok is False
+    assert (
+        "Policy violation: source file unavailable, cannot verify date ambiguity. Manual escalation required."
+        == err
+    )
+
+
+def test_repository_get_column_profiles_keeps_newest_row_per_column():
+    """Verify get_column_profiles returns only the latest row per column based on created_at and id."""
+    import datetime
+    from unittest.mock import MagicMock
+
+    from responder.repository import OpsRepository
+
+    repo = OpsRepository()
+    mock_cur = MagicMock()
+    mock_cur.description = [
+        ("batch_date",),
+        ("table_name",),
+        ("column_name",),
+        ("total_rows",),
+        ("null_count",),
+        ("null_rate",),
+        ("distinct_count",),
+        ("patterns",),
+        ("ambiguous_day_month_share",),
+        ("created_at",),
+        ("id",),
+    ]
+    dt_old = datetime.datetime(2026, 10, 4, 10, 0, 0, tzinfo=datetime.UTC)
+    dt_new = datetime.datetime(2026, 10, 4, 12, 0, 0, tzinfo=datetime.UTC)
+    mock_cur.fetchall.return_value = [
+        ("2026-10-04", "bronze.orders", "order_date", 100, 0, 0.0, 10, "{}", 0.0, dt_old, 1),
+        ("2026-10-04", "bronze.orders", "order_date", 100, 0, 0.0, 10, "{}", 1.0, dt_new, 5),
+        ("2026-10-04", "bronze.orders", "amount", 100, 0, 0.0, 50, "{}", 0.0, dt_old, 2),
+    ]
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    repo._get_connection = MagicMock(return_value=mock_conn)
+
+    profiles = repo.get_column_profiles("2026-10-04")
+    assert len(profiles) == 2
+    by_col = {p["column_name"]: p for p in profiles}
+    assert "order_date" in by_col
+    assert "amount" in by_col
+    # order_date must reflect the newest row (ambiguous_day_month_share = 1.0, id = 5)
+    assert by_col["order_date"]["ambiguous_day_month_share"] == 1.0
+    assert by_col["order_date"]["id"] == 5

@@ -101,13 +101,16 @@ def run_agent_once(incident_id: str) -> int:
         if not cit_passed:
             print("  Policy: not evaluated (citation check failed)")
         else:
+            batch_date_str = str(inc.get("batch_date") or "")
             ambiguity_share = 0.0
-            for p in repo.get_column_profiles(inc.get("batch_date", "")):
+            for p in repo.get_column_profiles(batch_date_str):
                 if p.get("column_name") == "order_date":
                     ambiguity_share = float(p.get("ambiguous_day_month_share", 0.0))
                     break
 
-            policy_ok, pol_err = enforce_patch_policy(diagnosis, ambiguity_share)
+            policy_ok, pol_err = enforce_patch_policy(
+                diagnosis, ambiguity_share, batch_date=batch_date_str
+            )
             print(f"  Policy Pass: {policy_ok} (Ambiguity Share: {ambiguity_share:.4f})")
             if not policy_ok:
                 print(f"  Policy Rejection: {pol_err}")

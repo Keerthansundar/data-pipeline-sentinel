@@ -101,7 +101,9 @@ def _enforce_patch_policy(**context: Any) -> dict[str, Any]:
 
     try:
         diag_obj = IncidentDiagnosis.model_validate(diag_dict)
-        policy_valid, policy_err = enforce_patch_policy(diag_obj, ambiguity_share)
+        policy_valid, policy_err = enforce_patch_policy(
+            diag_obj, ambiguity_share, batch_date=batch_date
+        )
     except Exception as exc:
         policy_valid, policy_err = False, str(exc)
 

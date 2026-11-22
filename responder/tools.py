@@ -5,6 +5,7 @@ from typing import Any
 
 from pipeline.config import get_project_root, load_yaml_config
 from pipeline.logging_config import get_logger
+from responder.policy import compute_source_ambiguity
 from responder.redact import redact_data, redact_text
 from responder.repository import OpsRepository
 
@@ -88,13 +89,19 @@ def inspect_column_profile(batch_date: str) -> dict[str, Any]:
             else (p.get("patterns") or {})
         )
         prev_null_rate = prev_profiles_by_col.get(c_name, {}).get("null_rate", 0.0)
+        ambiguous_share = p.get("ambiguous_day_month_share", 0.0)
+        if c_name == "order_date":
+            source_ambiguity = compute_source_ambiguity(batch_date)
+            if source_ambiguity is not None:
+                ambiguous_share = source_ambiguity
+
         comparison["columns"][c_name] = {
             "total_rows": p.get("total_rows", 0),
             "null_count": p.get("null_count", 0),
             "null_rate": p.get("null_rate", 0.0),
             "previous_null_rate": prev_null_rate,
             "distinct_count": p.get("distinct_count", 0),
-            "ambiguous_day_month_share": p.get("ambiguous_day_month_share", 0.0),
+            "ambiguous_day_month_share": ambiguous_share,
             "patterns": patterns,
         }
 
