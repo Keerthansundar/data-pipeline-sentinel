@@ -287,11 +287,11 @@ with DAG(
         task_id="validate_diagnosis",
         python_callable=_validate_diagnosis,
     )
-    enforce_patch_policy = PythonOperator(
+    enforce_patch_policy_task = PythonOperator(
         task_id="enforce_patch_policy",
         python_callable=_enforce_patch_policy,
     )
-    run_sandbox_verification = PythonOperator(
+    run_sandbox_verification_task = PythonOperator(
         task_id="run_sandbox_verification",
         python_callable=_run_sandbox_verification,
     )
@@ -299,11 +299,11 @@ with DAG(
         task_id="route_outcome",
         python_callable=_route_outcome,
     )
-    open_fix_pull_request = PythonOperator(
+    open_fix_pull_request_task = PythonOperator(
         task_id="open_fix_pull_request",
         python_callable=_open_fix_pull_request,
     )
-    send_incident_email = PythonOperator(
+    send_incident_email_task = PythonOperator(
         task_id="send_incident_email",
         python_callable=_send_incident_email,
     )
@@ -316,10 +316,10 @@ with DAG(
         claim_incident
         >> run_diagnosis_agent
         >> validate_diagnosis
-        >> enforce_patch_policy
-        >> run_sandbox_verification
+        >> enforce_patch_policy_task
+        >> run_sandbox_verification_task
         >> route_outcome
-        >> open_fix_pull_request
-        >> send_incident_email
+        >> open_fix_pull_request_task
+        >> send_incident_email_task
         >> record_audit
     )
