@@ -225,7 +225,15 @@ OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "file": {"type": "string"},
                             "operation": {"type": "string"},
                             "key_path": {"type": "string"},
-                            "value": {"type": "string"},
+                            "value": {
+                                "type": "string",
+                                "description": (
+                                    "The exact replacement or appended format string as a plain string, "
+                                    "such as '%d/%m/%Y'. Never use an object or dict. "
+                                    "The proposed format must be taken from sample_bad_values in the error log "
+                                    "(e.g. sample '21/10/2026' means '%d/%m/%Y')."
+                                ),
+                            },
                         },
                         "required": ["file", "operation", "key_path", "value"],
                     },

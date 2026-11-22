@@ -113,7 +113,10 @@ class OpsRepository:
                             ORDER BY logged_at ASC, id ASC
                             LIMIT 50;
                             """,
-                            (inc["batch_date"], inc["task_id"]),
+                            (
+                                str(inc["batch_date"]) if inc.get("batch_date") is not None else "",
+                                inc.get("task_id"),
+                            ),
                         )
                         for r in cur.fetchall():
                             logged_at_str = r[0].isoformat() if r[0] else ""
@@ -185,7 +188,7 @@ class OpsRepository:
             return []
 
     def get_schema_snapshot(
-        self, batch_date: str, table_name: str = "bronze.orders"
+        self, batch_date: Any, table_name: str = "bronze.orders"
     ) -> dict[str, Any] | None:
         """Fetch schema snapshot for a specific batch date and table."""
         conn = self._get_connection()
@@ -196,7 +199,7 @@ class OpsRepository:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT schema_json
+                        SELECT columns
                         FROM schema_snapshot
                         WHERE batch_date = %s AND table_name = %s
                         ORDER BY created_at DESC
@@ -236,7 +239,7 @@ class OpsRepository:
             logger.error("Error finding last good batch date: %s", exc)
             return None
 
-    def get_dq_results(self, batch_date: str) -> list[dict[str, Any]]:
+    def get_dq_results(self, batch_date: Any) -> list[dict[str, Any]]:
         """Fetch data quality check results for a specific batch date."""
         conn = self._get_connection()
         if not conn:
@@ -247,10 +250,10 @@ class OpsRepository:
                     cur.execute(
                         """
                         SELECT table_name, check_name, observed_value,
-                               threshold_value, passed, details, checked_at
+                               threshold_value, passed, details, created_at
                         FROM dq_results
                         WHERE batch_date = %s
-                        ORDER BY checked_at ASC;
+                        ORDER BY created_at ASC;
                         """,
                         (batch_date,),
                     )

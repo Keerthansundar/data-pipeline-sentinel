@@ -19,6 +19,29 @@ def validate_diagnosis_schema(
         Tuple of (is_valid, parsed_diagnosis_object, error_message).
     """
     try:
+        if not isinstance(raw_diagnosis, dict):
+            return False, None, f"raw_diagnosis must be a dict, got {type(raw_diagnosis).__name__}"
+
+        # Truncate each quote to 200 chars before schema validation
+        evidence = raw_diagnosis.get("evidence")
+        if isinstance(evidence, list):
+            for item in evidence:
+                if isinstance(item, dict) and "quote" in item:
+                    quote = item["quote"]
+                    if isinstance(quote, str) and len(quote) > 200:
+                        item["quote"] = quote[:200]
+
+        # Reject dict patch.value cleanly
+        patch_info = raw_diagnosis.get("patch")
+        if isinstance(patch_info, dict):
+            val = patch_info.get("value")
+            if isinstance(val, dict):
+                return (
+                    False,
+                    None,
+                    "patch.value must be a plain string (such as '%d/%m/%Y'), not a dict",
+                )
+
         diagnosis = IncidentDiagnosis.model_validate(raw_diagnosis)
         return True, diagnosis, None
     except ValidationError as exc:

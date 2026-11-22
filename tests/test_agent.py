@@ -305,3 +305,145 @@ def test_agent_full_diagnosis_loop_date_format():
     # Verify tool calls and audit were recorded
     assert fake_repo.record_tool_call.call_count >= 1
     fake_repo.record_audit.assert_called_once()
+
+
+def test_ops_repository_pipeline_log_passes_string_batch_date():
+    """Verify get_task_error_log passes str(batch_date) to pipeline_log query."""
+    import datetime
+
+    from responder.repository import OpsRepository
+
+    repo = OpsRepository()
+    repo.get_incident = MagicMock(
+        return_value={
+            "id": "INC-001",
+            "task_id": "silver_transform",
+            "batch_date": datetime.date(2026, 10, 1),
+            "error_type": "FormatDriftError",
+            "error_message": "Error occurred",
+            "error_trace": "Traceback...",
+        }
+    )
+
+    mock_cur = MagicMock()
+    mock_cur.fetchall.return_value = []
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    repo._get_connection = MagicMock(return_value=mock_conn)
+
+    result = repo.get_task_error_log("INC-001")
+    assert result["incident_id"] == "INC-001"
+    assert mock_cur.execute.called
+    query_sql, query_params = mock_cur.execute.call_args[0]
+    assert "FROM pipeline_log" in query_sql
+    assert query_params[0] == "2026-10-01"
+    assert isinstance(query_params[0], str)
+    assert query_params[1] == "silver_transform"
+
+
+def test_ops_repository_schema_snapshot_latest_row_per_table():
+    """Verify get_schema_snapshot queries columns column ordered by created_at DESC LIMIT 1."""
+    import datetime
+
+    from responder.repository import OpsRepository
+
+    repo = OpsRepository()
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = ({"order_id": "string", "amount": "double"},)
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    repo._get_connection = MagicMock(return_value=mock_conn)
+
+    batch_date = datetime.date(2026, 10, 1)
+    snapshot = repo.get_schema_snapshot(batch_date, "bronze.orders")
+
+    assert snapshot == {"order_id": "string", "amount": "double"}
+    assert mock_cur.execute.called
+    query_sql, query_params = mock_cur.execute.call_args[0]
+    assert "SELECT columns" in query_sql
+    assert "FROM schema_snapshot" in query_sql
+    assert "ORDER BY created_at DESC" in query_sql
+    assert "LIMIT 1" in query_sql
+    assert query_params == (batch_date, "bronze.orders")
+
+
+def test_validate_diagnosis_truncates_long_quotes():
+    """Verify evidence quotes > 200 chars are truncated to exactly 200 chars."""
+    from responder.validate import validate_diagnosis_schema
+
+    long_quote = "A" * 350
+    raw_diagnosis = {
+        "root_cause_category": "format_drift",
+        "confidence": 0.9,
+        "summary": "Date format drift detected",
+        "impact": "Pipeline failed",
+        "evidence": [
+            {
+                "tool_name": "fetch_task_error_log",
+                "tool_call_id": "call_123",
+                "quote": long_quote,
+            }
+        ],
+        "proposed_action": "escalate",
+        "recommended_next_steps": "Investigate error logs",
+    }
+
+    is_valid, diagnosis, err = validate_diagnosis_schema(raw_diagnosis)
+    assert is_valid is True
+    assert err is None
+    assert diagnosis is not None
+    assert len(diagnosis.evidence[0].quote) == 200
+    assert diagnosis.evidence[0].quote == "A" * 200
+
+
+def test_validate_diagnosis_patch_value_dict_handling():
+    """Verify string patch.value is accepted while dict value is rejected."""
+    from responder.validate import validate_diagnosis_schema
+
+    base_diagnosis = {
+        "root_cause_category": "format_drift",
+        "confidence": 0.9,
+        "summary": "Date format drift detected",
+        "impact": "Pipeline failed",
+        "evidence": [],
+        "proposed_action": "rules_patch",
+        "patch": {
+            "file": "config/silver_rules.yml",
+            "operation": "append_unique",
+            "key_path": "orders.date_formats.order_date",
+            "value": "%d/%m/%Y",
+        },
+        "recommended_next_steps": "Apply patch and rerun",
+    }
+
+    # 1. Plain string value: accepted
+    is_valid, diag_str, err = validate_diagnosis_schema(base_diagnosis.copy())
+    assert is_valid is True
+    assert diag_str is not None
+    assert diag_str.patch.value == "%d/%m/%Y"
+
+    # 2. Dict value with 'format': rejected
+    diag_dict_format = base_diagnosis.copy()
+    diag_dict_format["patch"] = {
+        "file": "config/silver_rules.yml",
+        "operation": "append_unique",
+        "key_path": "orders.date_formats.order_date",
+        "value": {"format": "%d/%m/%Y"},
+    }
+    is_valid, diag_dict, err = validate_diagnosis_schema(diag_dict_format)
+    assert is_valid is False
+    assert diag_dict is None
+    assert "patch.value must be a plain string" in (err or "")
+
+    # 3. Invalid dict value: rejected cleanly without crashing
+    diag_invalid_dict = base_diagnosis.copy()
+    diag_invalid_dict["patch"] = {
+        "file": "config/silver_rules.yml",
+        "operation": "append_unique",
+        "key_path": "orders.date_formats.order_date",
+        "value": {"unknown_field": 12345},
+    }
+    is_valid, diag_inv, err = validate_diagnosis_schema(diag_invalid_dict)
+    assert is_valid is False
+    assert diag_inv is None
+    assert "patch.value must be a plain string" in (err or "")

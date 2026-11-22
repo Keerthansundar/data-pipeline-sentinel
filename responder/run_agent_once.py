@@ -127,13 +127,14 @@ def run_agent_once(incident_id: str) -> int:
 
     # 5. Token Usage and Audit Record
     print("\n[5. AUDIT & TOKENS]")
+    conn = repo._get_connection()
     if conn:
         try:
             with conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT model, prompt_tokens, completion_tokens, final_action, pr_url, email_status, created_at
+                        SELECT model, prompt_tokens, completion_tokens, final_action, pr_url_or_preview, email_status, created_at
                         FROM incident_diagnosis_audit
                         WHERE incident_id = %s
                         ORDER BY created_at DESC
