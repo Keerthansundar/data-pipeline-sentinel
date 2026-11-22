@@ -447,3 +447,119 @@ def test_validate_diagnosis_patch_value_dict_handling():
     assert is_valid is False
     assert diag_inv is None
     assert "patch.value must be a plain string" in (err or "")
+
+
+def test_citation_check_accepts_verbatim_quote_with_wrong_or_missing_tool_call_id_and_rejects_non_verbatim():
+    """Verify validate_evidence_citations accepts verbatim quote with wrong/missing tool_call_id and rejects non-verbatim."""
+    from responder.schemas import EvidenceItem, IncidentDiagnosis, ProposedAction, RootCauseCategory
+    from responder.validate import validate_evidence_citations
+
+    tool_outputs = {
+        "fetch_task_error_log": "Error occurred in silver: unparseable date ratio 5.2% exceeds max 1.0% limit."
+    }
+
+    # 1. Verbatim quote with missing tool_call_id (None): accepted
+    diag_missing_id = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="fetch_task_error_log",
+                tool_call_id=None,
+                quote="unparseable date ratio 5.2% exceeds max 1.0%",
+            )
+        ],
+        proposed_action=ProposedAction.ESCALATE,
+        recommended_next_steps="Review error logs",
+    )
+    ok, err = validate_evidence_citations(diag_missing_id, tool_outputs)
+    assert ok is True
+    assert err is None
+
+    # 2. Verbatim quote with wrong tool_call_id and functions. prefix: accepted
+    diag_wrong_id = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="functions.fetch_task_error_log",
+                tool_call_id="INC-2026-10-01-silver_transform",
+                quote="unparseable   date ratio\n5.2% exceeds max 1.0%",
+            )
+        ],
+        proposed_action=ProposedAction.ESCALATE,
+        recommended_next_steps="Review error logs",
+    )
+    ok, err = validate_evidence_citations(diag_wrong_id, tool_outputs)
+    assert ok is True
+    assert err is None
+
+    # 3. Non-verbatim quote: rejected
+    diag_non_verbatim = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="fetch_task_error_log",
+                tool_call_id=None,
+                quote="this quote does not exist in output at all",
+            )
+        ],
+        proposed_action=ProposedAction.ESCALATE,
+        recommended_next_steps="Review error logs",
+    )
+    ok, err = validate_evidence_citations(diag_non_verbatim, tool_outputs)
+    assert ok is False
+    assert "does not appear verbatim" in (err or "")
+
+
+def test_policy_rejects_operation_update_and_invalid_key_path():
+    """Verify policy rejects operation 'update' and invalid key_path 'rules.order_date.format'."""
+    from responder.policy import enforce_patch_policy
+    from responder.schemas import IncidentDiagnosis, ProposedAction, RootCauseCategory, RulesPatch
+
+    # 1. Operation 'update' is rejected
+    diag_update = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="update",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch",
+    )
+    ok, err = enforce_patch_policy(diag_update, ambiguous_ratio=0.0)
+    assert ok is False
+    assert "not allowed" in (err or "")
+
+    # 2. Key path 'rules.order_date.format' is rejected
+    diag_key_path = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="rules.order_date.format",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch",
+    )
+    ok, err = enforce_patch_policy(diag_key_path, ambiguous_ratio=0.0)
+    assert ok is False
+    assert "not an authorized patch target" in (err or "")

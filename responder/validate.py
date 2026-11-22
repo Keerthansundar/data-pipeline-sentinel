@@ -57,7 +57,7 @@ def validate_evidence_citations(
 
     Args:
         diagnosis: Validated IncidentDiagnosis object.
-        tool_outputs: Mapping of tool_call_id to string output returned by tool.
+        tool_outputs: Mapping of tool names (or tool_call_ids) to string output returned by tool.
 
     Returns:
         Tuple of (all_valid, failure_reason).
@@ -68,28 +68,38 @@ def validate_evidence_citations(
             return False, "Rules patch proposed without supporting evidence citations"
         return True, None
 
+    def _collapse(text: str) -> str:
+        return " ".join(text.split())
+
     for idx, item in enumerate(diagnosis.evidence):
         if not item.quote or len(item.quote.strip()) == 0:
             return False, f"Evidence item {idx} has an empty quote"
 
-        if len(item.quote) > 200:
+        raw_tool_name = item.tool_name or ""
+        clean_tool_name = raw_tool_name.removeprefix("functions.")
+
+        output_str: str | None = None
+        if clean_tool_name in tool_outputs:
+            output_str = tool_outputs[clean_tool_name]
+        elif raw_tool_name in tool_outputs:
+            output_str = tool_outputs[raw_tool_name]
+        elif item.tool_call_id and item.tool_call_id in tool_outputs:
+            output_str = tool_outputs[item.tool_call_id]
+
+        if output_str is None:
             return (
                 False,
-                f"Evidence item {idx} quote exceeds maximum allowed length of 200 characters ({len(item.quote)} chars)",
+                f"Evidence item {idx} references tool '{clean_tool_name}' which was not called in this run",
             )
 
-        if item.tool_call_id not in tool_outputs:
-            return (
-                False,
-                f"Evidence item {idx} references unknown tool_call_id '{item.tool_call_id}'",
-            )
+        quote_collapsed = _collapse(item.quote)
+        output_collapsed = _collapse(output_str)
 
-        output_str = tool_outputs[item.tool_call_id]
-        if item.quote not in output_str:
+        if quote_collapsed not in output_collapsed:
             return (
                 False,
                 f"Evidence citation mismatch in item {idx}: quote '{item.quote[:50]}...' "
-                f"does not appear verbatim in tool '{item.tool_name}' output",
+                f"does not appear verbatim in tool '{clean_tool_name}' output",
             )
 
     return True, None

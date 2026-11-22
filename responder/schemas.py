@@ -41,7 +41,7 @@ class EvidenceItem(BaseModel):
     """Evidence item linking a verbatim quote to a specific tool call."""
 
     tool_name: str
-    tool_call_id: str
+    tool_call_id: str | None = None
     quote: str = Field(..., max_length=200)
 
 
@@ -215,23 +215,37 @@ OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                                 "tool_call_id": {"type": "string"},
                                 "quote": {"type": "string", "maxLength": 200},
                             },
-                            "required": ["tool_name", "tool_call_id", "quote"],
+                            "required": ["tool_name", "quote"],
                         },
                     },
                     "proposed_action": {"type": "string", "enum": ["rules_patch", "escalate"]},
                     "patch": {
                         "type": "object",
                         "properties": {
-                            "file": {"type": "string"},
-                            "operation": {"type": "string"},
-                            "key_path": {"type": "string"},
+                            "file": {
+                                "type": "string",
+                                "enum": ["config/silver_rules.yml"],
+                                "description": "Target configuration file. Must be 'config/silver_rules.yml'.",
+                            },
+                            "operation": {
+                                "type": "string",
+                                "enum": ["append_unique"],
+                                "description": "Patch operation. Must be 'append_unique'. Never use 'update'.",
+                            },
+                            "key_path": {
+                                "type": "string",
+                                "description": (
+                                    "Target YAML key path. For date format drift use 'orders.date_formats.order_date'. "
+                                    "For column rename drift use 'orders.column_aliases.<canonical_column>'."
+                                ),
+                            },
                             "value": {
                                 "type": "string",
                                 "description": (
-                                    "The exact replacement or appended format string as a plain string, "
-                                    "such as '%d/%m/%Y'. Never use an object or dict. "
-                                    "The proposed format must be taken from sample_bad_values in the error log "
-                                    "(e.g. sample '21/10/2026' means '%d/%m/%Y')."
+                                    "The proposed value as a plain string. For date format drift, a date-format "
+                                    "string like '%d/%m/%Y' taken from sample_bad_values in error log. "
+                                    "For column rename drift, the new column name as a plain string. "
+                                    "Never use an object or dict."
                                 ),
                             },
                         },

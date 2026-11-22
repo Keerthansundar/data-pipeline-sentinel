@@ -54,12 +54,29 @@ def run_agent_once(incident_id: str) -> int:
             with conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT step, output_truncated FROM incident_tool_calls WHERE incident_id = %s;",
+                        """
+                        SELECT step, tool_name, output_truncated
+                        FROM incident_tool_calls
+                        WHERE incident_id = %s
+                        ORDER BY id ASC;
+                        """,
                         (incident_id,),
                     )
-                    for row in cur.fetchall():
-                        tool_outputs_map[str(row[0])] = row[1] or ""
-                        tool_outputs_map[f"call_{row[0]}"] = row[1] or ""
+                    all_rows = cur.fetchall()
+                    start_idx = 0
+                    for i, r in enumerate(all_rows):
+                        if r[0] == 1:
+                            start_idx = i
+                    latest_rows = all_rows[start_idx:] if all_rows else []
+
+                    for row in latest_rows:
+                        tool_outputs_map[str(row[0])] = row[2] or ""
+                        tool_outputs_map[f"call_{row[0]}"] = row[2] or ""
+                        tname_clean = (row[1] or "").removeprefix("functions.")
+                        if tname_clean in tool_outputs_map:
+                            tool_outputs_map[tname_clean] += "\n" + (row[2] or "")
+                        else:
+                            tool_outputs_map[tname_clean] = row[2] or ""
         except Exception:
             pass
 
@@ -68,7 +85,7 @@ def run_agent_once(incident_id: str) -> int:
     if diagnosis.evidence:
         for idx, ev in enumerate(diagnosis.evidence, 1):
             quote = redact_text(ev.quote)
-            print(f"  {idx}. [{ev.tool_name}] (Tool Call: {ev.tool_call_id})")
+            print(f"  {idx}. [{ev.tool_name}] (Tool Call: {ev.tool_call_id or 'none'})")
             print(f'     Quote: "{quote}"')
     else:
         print("  No evidence items cited.")
@@ -81,16 +98,19 @@ def run_agent_once(incident_id: str) -> int:
         print(f"  Key Path:    {diagnosis.patch.key_path}")
         print(f"  Value:       {diagnosis.patch.value}")
 
-        ambiguity_share = 0.0
-        for p in repo.get_column_profiles(inc.get("batch_date", "")):
-            if p.get("column_name") == "order_date":
-                ambiguity_share = float(p.get("ambiguous_day_month_share", 0.0))
-                break
+        if not cit_passed:
+            print("  Policy: not evaluated (citation check failed)")
+        else:
+            ambiguity_share = 0.0
+            for p in repo.get_column_profiles(inc.get("batch_date", "")):
+                if p.get("column_name") == "order_date":
+                    ambiguity_share = float(p.get("ambiguous_day_month_share", 0.0))
+                    break
 
-        policy_ok, pol_err = enforce_patch_policy(diagnosis, ambiguity_share)
-        print(f"  Policy Pass: {policy_ok} (Ambiguity Share: {ambiguity_share:.4f})")
-        if not policy_ok:
-            print(f"  Policy Rejection: {pol_err}")
+            policy_ok, pol_err = enforce_patch_policy(diagnosis, ambiguity_share)
+            print(f"  Policy Pass: {policy_ok} (Ambiguity Share: {ambiguity_share:.4f})")
+            if not policy_ok:
+                print(f"  Policy Rejection: {pol_err}")
     else:
         print("  No patch proposed (Action: escalate).")
 
@@ -107,11 +127,16 @@ def run_agent_once(incident_id: str) -> int:
                         SELECT step, tool_name, duration_ms, arguments, output_truncated
                         FROM incident_tool_calls
                         WHERE incident_id = %s
-                        ORDER BY step ASC;
+                        ORDER BY id ASC;
                         """,
                         (incident_id,),
                     )
-                    tool_calls = cur.fetchall()
+                    all_calls = cur.fetchall()
+                    start_idx = 0
+                    for i, r in enumerate(all_calls):
+                        if r[0] == 1:
+                            start_idx = i
+                    tool_calls = all_calls[start_idx:] if all_calls else []
         except Exception as exc:
             print(f"  Could not load tool call history: {exc}")
 
