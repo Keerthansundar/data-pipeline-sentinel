@@ -75,8 +75,8 @@ def profile_batch(batch_date: str, pdf: Any | None = None) -> dict[str, Any]:
             patterns["iso_format_count"] = len(iso_dates)
             patterns["slash_format_count"] = len(slash_dates)
 
+            ambiguous_slash_count = 0
             if slash_dates:
-                ambiguous_slash_count = 0
                 for d in slash_dates:
                     parts = d.split("/")
                     if len(parts) == 3:

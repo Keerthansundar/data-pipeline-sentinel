@@ -12,10 +12,7 @@ from airflow.sdk.exceptions import AirflowFailException
 
 from pipeline.config import DEMO_MODE, get_project_root
 from pipeline.errors import (
-    AuthError,
-    DataQualityError,
-    FormatDriftError,
-    MissingColumnError,
+    NonRetryablePipelineError,
 )
 from pipeline.logging_config import get_logger
 from pipeline.observability import record_incident, resolve_incidents_for_batch
@@ -112,7 +109,7 @@ def _run_bronze_task(**context: Any) -> None:
 
     try:
         ingest_bronze(batch_date, try_number=try_number, dag_run_id=run_id, task_id="bronze_ingest")
-    except AuthError as exc:
+    except NonRetryablePipelineError as exc:
         raise AirflowFailException(str(exc)) from exc
 
 
@@ -124,7 +121,7 @@ def _run_silver_task(**context: Any) -> None:
 
     try:
         transform_silver(batch_date, dag_run_id=run_id, task_id="silver_transform")
-    except (FormatDriftError, MissingColumnError) as exc:
+    except NonRetryablePipelineError as exc:
         raise AirflowFailException(str(exc)) from exc
 
 
@@ -136,7 +133,7 @@ def _run_dq_task(**context: Any) -> None:
 
     try:
         run_dq_checks(batch_date, dag_run_id=run_id, task_id="data_quality_checks")
-    except DataQualityError as exc:
+    except NonRetryablePipelineError as exc:
         raise AirflowFailException(str(exc)) from exc
 
 
@@ -146,7 +143,10 @@ def _run_gold_task(**context: Any) -> None:
     batch_date = _get_batch_date(context)
     run_id = context.get("dag_run").run_id if context.get("dag_run") else "manual"
 
-    build_gold(batch_date, dag_run_id=run_id, task_id="gold_build")
+    try:
+        build_gold(batch_date, dag_run_id=run_id, task_id="gold_build")
+    except NonRetryablePipelineError as exc:
+        raise AirflowFailException(str(exc)) from exc
 
 
 def _run_freshness_task(**context: Any) -> None:

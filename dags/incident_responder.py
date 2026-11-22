@@ -129,7 +129,7 @@ def _run_sandbox_verification(**context: Any) -> dict[str, Any]:
     patch = diag_dict.get("patch")
 
     if action != "rules_patch" or not patch:
-        res = {"passed": True, "skipped": True}
+        res = {"passed": None, "skipped": True}
         ti.xcom_push(key="sandbox_results", value=res)
         return res
 

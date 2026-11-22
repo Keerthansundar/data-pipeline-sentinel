@@ -257,14 +257,15 @@ def run_sandbox_verification(
                     "checks": {"no_exception": False},
                 }
 
-        # 3. Execute sandbox transform
+        # 3. Execute sandbox transform (work on a copy; aliases are resolved on it)
+        work_pdf = bronze_pdf.copy()
         silver_pdf, quarantine_pdf, unparseable_ratio = execute_sandbox_silver_transform(
-            bronze_pdf.copy(), patched_rules
+            work_pdf, patched_rules
         )
 
-        # 4. Verify results
+        # 4. Verify results (use the alias-resolved frame so 'amount' exists)
         report = verify_sandbox_results(
-            bronze_pdf=bronze_pdf,
+            bronze_pdf=work_pdf,
             silver_pdf=silver_pdf,
             quarantine_pdf=quarantine_pdf,
             unparseable_ratio=unparseable_ratio,

@@ -30,14 +30,16 @@ CRITICAL INSTRUCTIONS:
 2. Tools are strictly read-only.
 3. Every claim must cite verbatim evidence from tool outputs. In your final diagnosis, provide an 'evidence' list of at most 3 items. The first item must quote the error message from fetch_task_error_log. Each quote must be one contiguous piece of text copied exactly, character for character, from that tool's output, under 150 chars. Tool outputs can be JSON or YAML: keep the original format and never convert YAML to JSON or the reverse. If you cannot copy a line exactly, leave that evidence item out instead of rewriting it.
 4. Propose a rules patch only for clean, unambiguous date format drift or column rename drift.
-5. In patch proposals:
+5a. In patch proposals:
    - For date format drift, use key_path "orders.date_formats.order_date" with value a plain date-format string like "%d/%m/%Y" taken from sample_bad_values in the error log.
    - For column rename drift, use key_path "orders.column_aliases.<canonical_column>" with value the new column name as a plain string.
    - patch.operation must always be "append_unique", never "update".
    - patch.file must always be "config/silver_rules.yml".
    - patch.value must always be a plain string, never an object or dict.
+5b. Treat a column rename as clean when fetch_task_error_log lists the missing column, diff_schema_vs_last_good_batch shows exactly one removed column and exactly one added column, and the added column appears in the available columns. In that case propose the alias patch instead of escalating. If more than one column was removed or added, escalate.
 6. If two interpretations are plausible, if dates are ambiguous (ambiguous_day_month_share > 0), or if there is any doubt, you MUST choose proposed_action='escalate'.
 7. Always finish by calling submit_incident_diagnosis; never write the final answer as plain text.
+8. Be efficient. Never call the same tool with the same arguments twice. After at most 5 tool calls, call submit_incident_diagnosis. For a data quality failure (error type DataQualityError), the error log from fetch_task_error_log and fetch_data_quality_results are sufficient: submit with root_cause_category data_quality, proposed_action 'escalate', patch null, and cite the error log line as evidence.
 """
 
 
@@ -146,6 +148,7 @@ def diagnose_incident(
     ]
 
     tool_outputs: dict[str, str] = {}
+    tool_call_ids: dict[str, str] = {}
     total_prompt_tokens = 0
     total_completion_tokens = 0
     raw_submitted_diagnosis: dict[str, Any] | None = None
@@ -259,6 +262,7 @@ def diagnose_incident(
             duration_ms = int((time.perf_counter() - t0) * 1000)
             tool_outputs[t_id] = output_str
             clean_tname = t_name.removeprefix("functions.")
+            tool_call_ids[clean_tname] = t_id
             if clean_tname in tool_outputs:
                 tool_outputs[clean_tname] += "\n" + output_str
             else:
@@ -348,6 +352,9 @@ def diagnose_incident(
         return diagnosis
 
     diagnosis = parsed_diag
+    for item in diagnosis.evidence:
+        if item.tool_call_id is None:
+            item.tool_call_id = tool_call_ids.get(item.tool_name.removeprefix("functions."))
 
     # 6. Evidence-Citation Verification
     cit_res = validate_evidence_citations(diagnosis, tool_outputs)
@@ -394,6 +401,9 @@ def diagnose_incident(
             )
             diagnosis.proposed_action = ProposedAction.ESCALATE
             diagnosis.escalation_reason = f"Patch policy rejected proposed fix: {policy_err}."
+
+        if diagnosis.proposed_action == ProposedAction.ESCALATE and not diagnosis.escalation_reason:
+            diagnosis.escalation_reason = "Model chose to escalate without proposing a patch."
 
     # 8. Record Final Audit
     final_action = diagnosis.proposed_action.value

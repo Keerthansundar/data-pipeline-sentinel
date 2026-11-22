@@ -45,7 +45,7 @@ def generate_incident_email_html(
 
     status_color = "#d9534f" if is_escalation else "#28a745"
     status_title = (
-        "ACTION REQUIRED: Incident Escalation" if is_escalation else "AUTOOFIX: Pull Request Opened"
+        "ACTION REQUIRED: Incident Escalation" if is_escalation else "AUTOFIX: Pull Request Opened"
     )
 
     evidence_html_items = []
@@ -77,7 +77,13 @@ def generate_incident_email_html(
         )
 
     sandbox_html = ""
-    if sandbox_results:
+    if sandbox_results and sandbox_results.get("skipped"):
+        sandbox_html = """
+        <div style="background-color: #f8f9fa; border-left: 4px solid #17a2b8; padding: 10px 15px; margin: 15px 0;">
+            <strong>Sandbox:</strong> not run (no patch proposed)
+        </div>
+        """
+    elif sandbox_results:
         sb_status = "PASSED" if sandbox_results.get("passed") else "FAILED"
         sandbox_html = f"""
         <div style="background-color: #f8f9fa; border-left: 4px solid #17a2b8; padding: 10px 15px; margin: 15px 0;">
