@@ -350,8 +350,15 @@ def diagnose_incident(
     diagnosis = parsed_diag
 
     # 6. Evidence-Citation Verification
-    citations_valid, citation_err = validate_evidence_citations(diagnosis, tool_outputs)
-    val_results = {"passed": citations_valid, "error": citation_err}
+    cit_res = validate_evidence_citations(diagnosis, tool_outputs)
+    citations_valid, citation_err = cit_res[0], cit_res[1]
+    dropped_items = getattr(cit_res, "dropped_items", [])
+    val_results = {
+        "passed": citations_valid,
+        "dropped_items": dropped_items,
+    }
+    if citation_err:
+        val_results["error"] = citation_err
     if not citations_valid:
         logger.warning(
             "Evidence citation check failed for incident %s: %s",

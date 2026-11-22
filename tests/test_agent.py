@@ -451,7 +451,13 @@ def test_validate_diagnosis_patch_value_dict_handling():
 
 def test_citation_check_accepts_verbatim_quote_with_wrong_or_missing_tool_call_id_and_rejects_non_verbatim():
     """Verify validate_evidence_citations accepts verbatim quote with wrong/missing tool_call_id and rejects non-verbatim."""
-    from responder.schemas import EvidenceItem, IncidentDiagnosis, ProposedAction, RootCauseCategory
+    from responder.schemas import (
+        EvidenceItem,
+        IncidentDiagnosis,
+        ProposedAction,
+        RootCauseCategory,
+        RulesPatch,
+    )
     from responder.validate import validate_evidence_citations
 
     tool_outputs = {
@@ -498,7 +504,7 @@ def test_citation_check_accepts_verbatim_quote_with_wrong_or_missing_tool_call_i
     assert ok is True
     assert err is None
 
-    # 3. Non-verbatim quote: rejected
+    # 3. Non-verbatim quote for rules_patch: rejected
     diag_non_verbatim = IncidentDiagnosis(
         root_cause_category=RootCauseCategory.FORMAT_DRIFT,
         confidence=0.9,
@@ -511,12 +517,18 @@ def test_citation_check_accepts_verbatim_quote_with_wrong_or_missing_tool_call_i
                 quote="this quote does not exist in output at all",
             )
         ],
-        proposed_action=ProposedAction.ESCALATE,
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
         recommended_next_steps="Review error logs",
     )
     ok, err = validate_evidence_citations(diag_non_verbatim, tool_outputs)
     assert ok is False
-    assert "does not appear verbatim" in (err or "")
+    assert "Rules patch requires a verified quote from fetch_task_error_log" in (err or "")
 
 
 def test_policy_rejects_operation_update_and_invalid_key_path():
@@ -563,3 +575,167 @@ def test_policy_rejects_operation_update_and_invalid_key_path():
     ok, err = enforce_patch_policy(diag_key_path, ambiguous_ratio=0.0)
     assert ok is False
     assert "not an authorized patch target" in (err or "")
+
+
+def test_citation_check_drops_bad_secondary_quote_and_passes():
+    """Verify bad secondary quote is dropped and diagnosis passes when error log quote is verbatim."""
+    from responder.schemas import (
+        EvidenceItem,
+        IncidentDiagnosis,
+        ProposedAction,
+        RootCauseCategory,
+        RulesPatch,
+    )
+    from responder.validate import validate_evidence_citations
+
+    tool_outputs = {
+        "fetch_task_error_log": "Error: unparseable date ratio 5.2% exceeds max 1.0% seen in batch",
+        "inspect_column_profile": "Column profiling completed for batch 2026-10-01",
+    }
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.95,
+        summary="Format drift detected",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="fetch_task_error_log",
+                quote="unparseable date ratio 5.2% exceeds max 1.0%",
+            ),
+            EvidenceItem(
+                tool_name="inspect_column_profile",
+                quote="completely hallucinated quote that does not appear in column profile at all",
+            ),
+        ],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch and rerun",
+    )
+
+    cit_res = validate_evidence_citations(diag, tool_outputs)
+    assert cit_res[0] is True
+    assert cit_res[1] is None
+    # Bad secondary quote was removed from diagnosis.evidence
+    assert len(diag.evidence) == 1
+    assert diag.evidence[0].tool_name == "fetch_task_error_log"
+    # Dropped item is recorded with quote truncated to 80 chars
+    assert len(cit_res.dropped_items) == 1
+    assert cit_res.dropped_items[0]["tool_name"] == "inspect_column_profile"
+    assert "completely hallucinated quote" in cit_res.dropped_items[0]["quote"]
+    assert len(cit_res.dropped_items[0]["quote"]) <= 80
+
+
+def test_citation_check_rules_patch_only_bad_error_log_quote_fails():
+    """Verify rules_patch with only a bad fetch_task_error_log quote fails."""
+    from responder.schemas import (
+        EvidenceItem,
+        IncidentDiagnosis,
+        ProposedAction,
+        RootCauseCategory,
+        RulesPatch,
+    )
+    from responder.validate import validate_evidence_citations
+
+    tool_outputs = {
+        "fetch_task_error_log": "Pipeline log output without matching error string",
+    }
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.95,
+        summary="Format drift detected",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="fetch_task_error_log",
+                quote="unparseable date ratio 5.2% exceeds max 1.0%",
+            ),
+        ],
+        proposed_action=ProposedAction.RULES_PATCH,
+        patch=RulesPatch(
+            file="config/silver_rules.yml",
+            operation="append_unique",
+            key_path="orders.date_formats.order_date",
+            value="%d/%m/%Y",
+        ),
+        recommended_next_steps="Apply patch and rerun",
+    )
+
+    cit_res = validate_evidence_citations(diag, tool_outputs)
+    assert cit_res[0] is False
+    assert "Rules patch requires a verified quote from fetch_task_error_log" in (cit_res[1] or "")
+    # Bad quote was removed
+    assert len(diag.evidence) == 0
+    assert len(cit_res.dropped_items) == 1
+
+
+def test_citation_check_tool_never_called_fails():
+    """Verify evidence referencing a tool that was never called strictly fails."""
+    from responder.schemas import (
+        EvidenceItem,
+        IncidentDiagnosis,
+        ProposedAction,
+        RootCauseCategory,
+    )
+    from responder.validate import validate_evidence_citations
+
+    tool_outputs = {
+        "fetch_task_error_log": "Pipeline log output",
+    }
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.FORMAT_DRIFT,
+        confidence=0.9,
+        summary="Format drift",
+        impact="Silver stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="uncalled_tool_name",
+                quote="some quote",
+            ),
+        ],
+        proposed_action=ProposedAction.ESCALATE,
+        recommended_next_steps="Review logs",
+    )
+
+    cit_res = validate_evidence_citations(diag, tool_outputs)
+    assert cit_res[0] is False
+    assert "was not called in this run" in (cit_res[1] or "")
+
+
+def test_citation_check_escalate_without_patch_valid_with_all_evidence_dropped():
+    """Verify escalate-without-patch diagnoses remain valid even if all evidence was dropped."""
+    from responder.schemas import (
+        EvidenceItem,
+        IncidentDiagnosis,
+        ProposedAction,
+        RootCauseCategory,
+    )
+    from responder.validate import validate_evidence_citations
+
+    tool_outputs = {
+        "fetch_task_error_log": "Pipeline log output without the quoted string",
+    }
+    diag = IncidentDiagnosis(
+        root_cause_category=RootCauseCategory.UNKNOWN,
+        confidence=0.5,
+        summary="Investigation inconclusive",
+        impact="Pipeline stopped",
+        evidence=[
+            EvidenceItem(
+                tool_name="fetch_task_error_log",
+                quote="this quote is not in the log output",
+            ),
+        ],
+        proposed_action=ProposedAction.ESCALATE,
+        recommended_next_steps="Manual review needed",
+    )
+
+    cit_res = validate_evidence_citations(diag, tool_outputs)
+    assert cit_res[0] is True
+    assert cit_res[1] is None
+    assert len(diag.evidence) == 0
+    assert len(cit_res.dropped_items) == 1
