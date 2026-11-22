@@ -107,7 +107,13 @@ def _enforce_patch_policy(**context: Any) -> dict[str, Any]:
     except Exception as exc:
         policy_valid, policy_err = False, str(exc)
 
-    res = {"passed": policy_valid, "error": policy_err}
+    res = {
+        "passed": bool(policy_valid),
+        "approved": bool(policy_valid),
+        "reason": policy_err or None,
+        "error": policy_err,
+    }
+
     ti.xcom_push(key="policy_results", value=res)
     return res
 

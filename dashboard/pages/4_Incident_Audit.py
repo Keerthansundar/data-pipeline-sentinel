@@ -153,8 +153,14 @@ if diag_data.get("patch"):
                 policy_res = json.loads(policy_res)
             except Exception:
                 policy_res = {}
-        pol_passed = policy_res.get("passed", True) if policy_res else True
-        st.metric("Policy Enforcement", "PASSED" if pol_passed else "REJECTED")
+        pol_passed = (
+            bool(policy_res.get("approved", policy_res.get("passed", True))) if policy_res else True
+        )
+        if audit and audit.get("final_action") == "escalate" and diag_data.get("patch"):
+            pol_passed = False
+        st.metric("Policy Enforcement", "APPROVED" if pol_passed else "REJECTED")
+        if policy_res and policy_res.get("reason"):
+            st.caption(str(policy_res["reason"]))
 
     # Sandbox Results
     sb_res = audit.get("sandbox_results") if audit else {}
