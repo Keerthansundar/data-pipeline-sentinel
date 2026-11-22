@@ -65,7 +65,7 @@ class IncidentDiagnosis(BaseModel):
     proposed_action: ProposedAction
     patch: RulesPatch | None = None
     escalation_reason: str | None = None
-    recommended_next_steps: str
+    recommended_next_steps: str = ""
 
 
 OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
