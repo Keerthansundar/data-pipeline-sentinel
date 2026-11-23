@@ -188,9 +188,9 @@ def test_sandbox_fail_revenue_mismatch():
     assert report["passed"] is False
     assert report["checks"]["revenue_reconciles"] is False
 
-
-def test_pr_dry_run_preview_output(tmp_path: Path):
+def test_pr_dry_run_preview_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Verify open_fix_pull_request in dry_run mode writes markdown preview and diff files."""
+    monkeypatch.setattr("responder.pr.get_project_root", lambda: tmp_path)
     incident_id = "INC-TEST-DRYRUN-001"
     patch_diff = "+ orders.date_formats.order_date: %d/%m/%Y"
     audit_data = {
