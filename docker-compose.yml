@@ -1,14 +1,12 @@
 ---
-x-airflow-common:
-  &airflow-common
+x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: docker/airflow/Dockerfile
   image: pipeline-sentinel-airflow:3.4.0
   env_file:
     - .env
-  environment:
-    &airflow-common-env
+  environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:airflow@postgres/airflow
@@ -64,7 +62,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      test: [ "CMD-SHELL", "pg_isready -U airflow -d airflow" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -82,7 +80,7 @@ services:
     ports:
       - "5434:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ops_user -d ops"]
+      test: [ "CMD-SHELL", "pg_isready -U ops_user -d ops" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -131,7 +129,7 @@ services:
     <<: *airflow-common
     command: scheduler
     healthcheck:
-      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      test: [ "CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\"" ]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -147,7 +145,7 @@ services:
     <<: *airflow-common
     command: dag-processor
     healthcheck:
-      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\""]
+      test: [ "CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\"" ]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -168,6 +166,7 @@ services:
       - "8501:8501"
     volumes:
       - ./dashboard:/app/dashboard
+      - ./.streamlit:/app/.streamlit:ro
       - ./pipeline:/app/pipeline:ro
       - ./responder:/app/responder:ro
       - ./config:/app/config:ro
