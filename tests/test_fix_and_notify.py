@@ -337,6 +337,10 @@ def test_pr_github_mode_mock():
     mock_repo.get_branch.return_value = mock_base
     mock_file = MagicMock()
     mock_file.sha = "file123"
+    mock_file.decoded_content = (
+        b'orders:\n  date_formats:\n    order_date:\n      - "%Y-%m-%d"\n'
+    )
+    mock_repo.get_pulls.return_value = []
     mock_repo.get_contents.return_value = mock_file
     mock_pr = MagicMock()
     mock_pr.html_url = "https://github.com/org/repo/pull/42"

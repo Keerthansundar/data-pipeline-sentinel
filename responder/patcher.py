@@ -3,6 +3,7 @@
 import argparse
 import difflib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -116,9 +117,10 @@ def apply_patch_in_place(file_path: Path, patch: dict[str, Any]) -> str:
 
 
 def apply_fix_for_incident(incident_id: str) -> bool:
-    """Load patch from incident audit/preview and apply to config/silver_rules.yml.
+    """Apply the approved patch for an incident to config/silver_rules.yml.
 
-    Used by 'make apply-fix INCIDENT=<id>'.
+    Refuses unless the incident is PR_OPENED, the latest audit row is 'pr_opened',
+    and the patch policy still approves the stored patch.
 
     Args:
         incident_id: Target incident ID.
@@ -127,49 +129,57 @@ def apply_fix_for_incident(incident_id: str) -> bool:
         True if fix applied successfully.
     """
     root = get_project_root()
-    preview_file = root / "data" / "pr_previews" / f"{incident_id}.md"
     rules_file = root / "config" / "silver_rules.yml"
 
-    patch_dict = None
-
-    # 1. Try reading from Ops DB
     repo = OpsRepository()
     inc = repo.get_incident(incident_id)
-    if inc:
-        conn = repo._get_connection()
-        if conn:
-            try:
-                with conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT diagnosis FROM incident_diagnosis_audit WHERE incident_id = %s ORDER BY created_at DESC LIMIT 1;",
-                            (incident_id,),
-                        )
-                        row = cur.fetchone()
-                        if row and row[0]:
-                            diag = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                            patch_dict = diag.get("patch")
-            except Exception as exc:
-                logger.warning("Could not read diagnosis from DB: %s", exc)
+    if not inc:
+        print(f"Error: incident {incident_id} not found")
+        return False
+    if inc.get("status") != "PR_OPENED":
+        print(f"Refusing: incident status is {inc.get('status')}, expected PR_OPENED")
+        return False
 
-    # 2. Try parsing preview markdown if DB did not yield patch
-    if not patch_dict and preview_file.exists():
-        with open(preview_file, encoding="utf-8") as f:
-            content = f.read()
-        import re
+    diag = None
+    final_action = None
+    conn = repo._get_connection()
+    if conn:
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT final_action, diagnosis
+                    FROM incident_diagnosis_audit
+                    WHERE incident_id = %s
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1;
+                    """,
+                    (incident_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    final_action = row[0]
+                    diag = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+        except Exception as exc:
+            logger.warning("Could not read diagnosis from DB: %s", exc)
 
-        kp_match = re.search(r"\*\*Key Path:\*\*\s*`([^`]+)`", content)
-        val_match = re.search(r"\*\*Value:\*\*\s*`([^`]+)`", content)
-        if kp_match and val_match:
-            patch_dict = {
-                "file": "config/silver_rules.yml",
-                "operation": "append_unique",
-                "key_path": kp_match.group(1).strip(),
-                "value": val_match.group(1).strip(),
-            }
+    if final_action != "pr_opened" or not diag:
+        print(f"Refusing: latest audit action is '{final_action}', expected 'pr_opened'")
+        return False
 
+    patch_dict = diag.get("patch")
     if not patch_dict:
         print(f"Error: No patch found for incident {incident_id}")
+        return False
+
+    from responder.policy import enforce_patch_policy
+    from responder.schemas import IncidentDiagnosis
+
+    allowed, reason = enforce_patch_policy(
+        IncidentDiagnosis.model_validate(diag), 0.0, batch_date=str(inc.get("batch_date"))
+    )
+    if not allowed:
+        print(f"Refusing: patch policy no longer approves this patch: {reason}")
         return False
 
     print(f"Applying patch for incident {incident_id} to {rules_file}:")
@@ -188,4 +198,4 @@ if __name__ == "__main__":
     parser.add_argument("--incident-id", required=True, help="Incident ID to apply fix for")
     args = parser.parse_args()
     success = apply_fix_for_incident(args.incident_id)
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

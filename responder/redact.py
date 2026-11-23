@@ -4,9 +4,9 @@ import re
 from typing import Any
 
 # Regex patterns for scrubbing sensitive values
-_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+_EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _OPENAI_KEY_PATTERN = re.compile(r"sk-[a-zA-Z0-9_-]{20,}")
-_GITHUB_TOKEN_PATTERN = re.compile(r"(ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{50,})")
+_GITHUB_TOKEN_PATTERN = re.compile(r"(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})")
 _BEARER_PATTERN = re.compile(r"Bearer\s+[a-zA-Z0-9_\-\.=:_+/]+", re.IGNORECASE)
 _PASSWORD_PATTERN = re.compile(
     r"\b(password|pwd|secret)\s*[:=]\s*(['\"][^'\"]*['\"]|[^\s,;]+)",
