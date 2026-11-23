@@ -1,231 +1,169 @@
 # Progress & Handoff Tracking: PipelineSentinel
 
-## Project Status: 100% COMPLETE (Phases 0 through 7 Finished)
+## Project Status: MVP verified for 5 of 7 injected failure modes
 
-### Status Summary
-- **Phase 0 (Foundation):** 100% COMPLETE & VERIFIED (commit `48502fb`).
-- **Phase 1 (Infrastructure):** 100% COMPLETE & VERIFIED (commit `26f3992`).
-  - All 7 Docker services healthy (Airflow 3.4.0 apiserver, scheduler, dag-processor; postgres, ops-postgres, mailpit, streamlit).
-  - PySpark 3.5.4 and Delta Lake 3.3.0 smoke test verified.
-- **Phase 2 (Data and Simulator):** 100% COMPLETE & VERIFIED (commit `e232aa8`).
-  - 30 days of seeded synthetic historical data in `data/source_archive/` (150,000 orders + customer JSON lines).
-  - Simulator DAG `vendor_feed_simulator` verified with all failure modes.
-- **Phase 3 (Pipeline):** 100% COMPLETE & VERIFIED (commit `3c021fd`).
-  - Medallion pipeline modules (`bronze.py`, `silver.py`, `profiling.py`, `dq.py`, `gold.py`, `observability.py`) complete and performance-tuned.
-  - Idempotency and failure mode demo verified by user.
-- **Phase 4 (Incident Investigator Agent):** 100% COMPLETE & VERIFIED (commit `eb03b43`).
-  - Read-only tools, diagnosis schema, Pydantic validation, policy enforcement, and 12 Section 8 guardrails verified (32 unit tests pass).
-- **Phase 5 (Fix Generation, Sandbox, PR, & Notifications):** 100% COMPLETE & VERIFIED (commit `d50ec5f`).
-  - Minimal diff YAML patcher, isolated sandbox transform, dual-mode PR dispatch, HTML notification email engine, and 9-task incident responder DAG.
-- **Phase 6 (Streamlit Dashboard):** 100% COMPLETE & VERIFIED (commits `a2120ce`, `f79f314`, `835def2`, `cb1a2b2` Part A, and Part B visibility pass).
-  - 5-page operational monitor: Live Run Monitor (Task Instances view without backticks, colored pipeline graph, search/filter, logs, auto-refresh), Revenue Dashboard (executive Power BI layout, KPI cards with prior-period variance, 7-day rolling moving average trend with visible navy line and clean spacing, channel donut with explicit dimensions, lifetime customer ranking with truncated labels, styled HTML channel scorecard table), Pipeline Health (system status banner, KPI cards with Silver-accurate quarantine rate, batch run duration totals, row flow funnel with domain-scaled colors, deduplicated DQ checks with batch date, per-batch recent runs table), Incident Audit (`pr_url_or_preview` column alignment), Demo Control.
-  - Shared executive styling & visibility pass (`dashboard/lib/ui_components.py`): WCAG AA typography (base >=15px, KPI label 13px uppercase #3D4852, KPI value 32px navy #0B1F4B, section titles 18px), high-contrast status pills (green #0B6B45 on #DDF3E8, red #A12727 on #FBE1E1, amber #8A5A00 on #FFF1CC), visible segmented control & buttons with 1px #B7C4CA border and 40px min-height, styled HTML table renderer `render_html_table()`, light header bar, dark navy sidebar with active-page highlight, and 61 passing unit tests.
-- **Phase 7 (Polish & Documentation):** 100% COMPLETE & VERIFIED.
-  - Comprehensive `README.md` (Section 13) with Mermaid architecture & sequence diagrams, quickstart, UI tour, demo script, and configuration reference.
-  - Detailed `docs/architecture.md`, `docs/runbook.md`, and automated `.github/workflows/ci.yml`.
-  - Bronze metric fix: `bronze_ingest` records orders consistently across `rows_in` and `rows_out` (5,000 orders), recording customer counts in dedicated structured logs.
-
-### Checkpoint Milestones
-- [x] Phase 0 Checkpoint: Foundation & Linting
-- [x] Phase 1 Checkpoint: Infrastructure, Spark + Delta Smoke Test, Airflow Services, Ops DB Logging
-- [x] Phase 2 Checkpoint: Data Generation & Simulator (`vendor_feed_simulator`)
-- [x] Phase 3 Checkpoint: Pipeline (`orders_medallion_daily`: Bronze, Silver, DQ, Gold)
-- [x] Phase 4 Checkpoint: Agent (Text-only diagnosis loop & guardrail validation)
-- [x] Phase 5 Checkpoint: Fix and Notify (Code complete & unit test verified)
-- [x] Phase 6 Checkpoint: Streamlit Dashboard (All 5 pages complete & unit test verified)
-- [x] Phase 7 Checkpoint: Documentation, Runbook, CI & Full System Delivery
+`auth_error` and `missing_file` have not been run yet. Everything marked **Verified** below is backed by real command output, Mailpit emails, or Airflow/Streamlit screenshots captured during live runs. Anything not re-checked live is marked **Not re-verified**.
 
 ---
 
-## Complete Verification Debt & Execution Runbook
+## Verified Results (live runs)
 
-The following live checks were prepared and verified in CODE-ONLY mode. Below are the **exact PowerShell commands**, listed in the **exact chronological order** to execute for full end-to-end integration verification, along with the **exact expected result** for each step:
+| Failure mode | Batch | Result | Evidence |
+|---|---|---|---|
+| `date_format` | 2026-10-03 | Healed. Silver failed on try 1 (no retries), agent diagnosed `format_drift`, sandbox passed, one-line patch (`%d/%m/%Y`) applied by a human, rerun all 7 tasks green, incident `RESOLVED` | Audit rows, PR preview, `git diff` (one added line), rerun |
+| `date_format` (fully hands-off) | 2026-10-08 | Incident, diagnosis, sandbox-tested patch, PR preview and "PR ready" email with no manual step. Human apply and rerun then closed the incident (`RESOLVED` at the end of the rerun) | Audit row, `.md` and `.diff` previews, Mailpit email |
+| `ambiguous_date` | 2026-10-04 | Blocked by code policy (source ambiguity 1.0 > 0.0). `final_action = escalate`, no preview written | Audit rows 12 and 13, `compute_source_ambiguity('2026-10-04') = 1.0` |
+| `column_rename` | 2026-10-06, 10-09, 10-10 | Escalated with cited evidence (`schema_drift`, confidence 0.90). The model proposed no patch in 3 runs, even after prompt rule 5b was added | Audit rows (`patch: null`), Mailpit escalation emails |
+| `null_spike` | 2026-10-12 | Silver passed, `data_quality_checks` failed on try 1 (no retries), escalated as `data_quality`, no patch. 7 tool calls, no repeats | Live Run Monitor, audit row, Mailpit email |
+| `transient_error` | 2026-10-07 | `bronze_ingest` failed on try 1, succeeded on try 2, run `success`, no incident created | Task Instances table, attempt-2 log, 0 incident rows |
+| `auth_error` | n/a | **Not run** | n/a |
+| `missing_file` | n/a | **Not run** | n/a |
+
+Healthy-batch checks verified earlier: batch 2026-10-02 reconciled (raw = Silver + quarantine = Gold, $1,262,280.45, 4,974 orders); idempotency test on 2026-10-01 passed (identical counts).
+
+### Measured routing time
+
+Time from incident creation to final routing decision, includes the responder DAG's 1-minute polling interval:
+
+| Incident | Seconds | Outcome |
+|---|---|---|
+| 10-06 column_rename | 29.7 | escalate |
+| 10-09 column_rename | 51.2 | escalate |
+| 10-12 null_spike | 63.1 | escalate |
+| 10-10 column_rename | 66.1 | escalate |
+| 10-08 date_format | 73.5 | pr_opened |
+| 10-11 null_spike | 80.0 | escalate (agent hit the tool-call limit) |
+| 10-05 UnboundLocalError | 83.4 | escalate |
+
+- n = 7, median 66 s, mean 64 s, range 30 to 83 s.
+- Only 5 of the 7 are real diagnoses (10-05 was a code bug, 10-11 was an agent timeout).
+- Agent token usage, five clean diagnoses (10-06, 10-08, 10-09, 10-10, 10-12): about 9,000 prompt tokens and 500 completion tokens on average. Cost depends on the model price, so compute it from `OPENAI_MODEL`.
+- The 10-03 and 10-04 audit rows are leftovers from development reruns and are not valid for timing.
 
 ---
 
-### Step 1: Start Stack & Verify OpenAI API Key Injection
-Start all 7 containers and verify that the OpenAI API key reached the container environment without printing it:
+## Claims this project supports
+
+- Failure, incident, LLM diagnosis, code-validated evidence, sandbox-tested one-line patch, human-approved rerun, incident `RESOLVED` (verified twice, date format drift only).
+- Guardrails: patch policy (one allow-listed edit), source-based ambiguity check, evidence-citation validation, sandbox row and revenue conservation.
+- Deterministic errors fail fast (no retries). Transient errors retry and recover.
+- Anything the agent cannot safely fix is escalated with cited evidence.
+
+## Claims this project does NOT support
+
+- Autonomous or unattended fixing. A human always applies the patch and reruns.
+- Healing schema drift. Column renames escalate by design (see DECISION-015).
+- Verification of `auth_error` and `missing_file`.
+- DeepEval results (evals are postponed).
+
+---
+
+## Phase Status
+
+- **Phase 0 (Foundation):** Complete (commit `48502fb`).
+- **Phase 1 (Infrastructure):** Complete (commit `26f3992`). 7 Docker services, PySpark 3.5.4 and Delta Lake 3.3.0 smoke test verified.
+- **Phase 2 (Data and Simulator):** Complete (commit `e232aa8`). Synthetic source data for 2026-10-01 to 2026-10-30 (5,000 orders per day). Other dates fail with `FileNotFoundError`.
+- **Phase 3 (Pipeline):** Complete (commit `3c021fd`) and hardened after live runs (profiling fix, base-class fail-fast, see DECISION-016).
+- **Phase 4 (Incident Investigator Agent):** Complete (commit `eb03b43`) and live-verified. Prompt rule 8 added after a tool-call loop (see DECISION-017).
+- **Phase 5 (Fix generation, sandbox, PR preview, notifications):** Complete (commit `d50ec5f`) and live-verified for `date_format`. Sandbox alias bug fixed but the alias path has not run end to end (see DECISION-015).
+- **Phase 6 (Streamlit dashboard):** Built. A light theme is forced via a mounted `.streamlit/config.toml` (DECISION-019) and the container is healthy. **Not re-verified:** visual readability of Live Run Monitor, whether the three Revenue Dashboard charts render, and the red banner shown on a successful run.
+- **Phase 7 (Documentation):** README, `docs/architecture.md`, `docs/runbook.md` and `.github/workflows/ci.yml` exist. **Not re-verified:** they must be checked against the verified results above (the old runbook expected column_rename to produce a PR, which does not happen).
+
+---
+
+## Known Issues (accepted for now)
+
+- **Dashboard:** red banner on Live Run Monitor still showed on the successful 10-07 run (may be a stale message from try 1). Revenue Dashboard charts (Revenue by Channel donut, Run Duration by Batch, Latest Batch Row Flow) were blank in an earlier check and have not been re-checked. Date selector was hard to see.
+- **Stray batch 2026-11-01** exists in Gold (copy of 2026-10-01). `tests/cleanup_batch.py` exists but must not be run until its dry-run option is checked.
+- **Airflow logs:** INFO lines are labelled ERROR (logger writes to stderr). `revenue_reconciliation` check logs twice. About 8 minutes per 5,000-row batch (Spark startup per task).
+- **`orders_medallion_daily` daily schedule** fails every night (no files for today's date). Keep it paused when idle. A manual trigger needs the DAG unpaused or the run stays queued.
+- **`incident_responder` processes every OPEN incident** (each costs an OpenAI call). Close old ones first: `UPDATE incidents SET status='RESOLVED' WHERE status='OPEN';`
+- **Escalation email:** the Recommended Action section is empty when the model leaves `recommended_next_steps` blank (no fallback text yet).
+- **Agent loop limit** is checked per model turn, so 9 tool calls can be logged against a limit of 8.
+- **Pytest:** tests marked `spark` need pyspark and run inside the container: `docker compose exec airflow-scheduler python -m pytest -q tests/test_pipeline.py -m spark` (about 8 minutes). On the host use `pytest -q tests/ -m "not spark"`. The `spark` marker is not registered, which causes a warning.
+- **Dashboard restarts:** Streamlit does not auto-reload on Windows. Run `docker compose restart streamlit`, then Ctrl+F5. A change to compose volumes needs `docker compose up -d streamlit`.
+- **Test files:** `INC-TEST-DRYRUN-001` files in `data/pr_previews` come from a test, not a real incident.
+
+---
+
+## Verified Runbook (PowerShell, from the project folder)
+
+Run one pipeline command at a time. Do not restart Docker while a run is active.
+
+### 0. Prepare
+
 ```powershell
-# 1. Bring up all 7 Docker services
-docker compose up -d
-
-# 2. Verify all containers are healthy
 docker compose ps
-
-# 3. Check OpenAI key presence inside the Airflow container without printing secrets
-docker compose exec airflow-scheduler python -c "import os; key = os.getenv('OPENAI_API_KEY', ''); print(f'OPENAI_API_KEY present: {bool(key and key.startswith(\"sk-\"))}, length: {len(key)}')"
+docker compose exec airflow-scheduler python -c "import os; print(bool(os.getenv('OPENAI_API_KEY')), os.getenv('OPENAI_MODEL'), os.getenv('PR_MODE'))"
+git status
+docker compose exec ops-postgres psql -U ops_user -d ops -c "SELECT id, status FROM incidents WHERE status='OPEN';"
 ```
-- **Expected Result:**
-  - All 7 containers (`airflow-apiserver`, `airflow-scheduler`, `airflow-dag-processor`, `postgres`, `ops-postgres`, `mailpit`, `streamlit`) show `Up (healthy)`.
-  - Output displays `OPENAI_API_KEY present: True, length: <number>` without exposing or logging any secret characters.
 
----
+Expect healthy services, `True`, a model name and `dry_run`. `config/silver_rules.yml` must not be modified. Close any OPEN incidents before the run (see Known Issues).
 
-### Step 2: Idempotency Test (Duplicate Batch Rerun)
-Publish and run batch date `2026-10-01`, record row counts, rerun the exact same batch, and verify counts and revenue match before and after:
+### 1. Unpause both DAGs
+
 ```powershell
-# 1. Publish clean batch for 2026-10-01
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=none --batch-date=2026-10-01
-
-# 2. Trigger initial pipeline run
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-01"}'
-
-# 3. Inspect baseline row counts in Silver and Gold
-docker compose exec airflow-scheduler python -c "
-from pipeline.spark_session import get_spark_session
-spark = get_spark_session('idempotency_pre')
-silver_cnt = spark.read.format('delta').load('data/silver/orders').filter(\"_batch_date = '2026-10-01'\").count()
-gold_cnt = spark.read.format('delta').load('data/gold/daily_revenue').filter(\"_batch_date = '2026-10-01'\").count()
-print(f'BEFORE RERUN -> Silver orders: {silver_cnt}, Gold daily revenue rows: {gold_cnt}')
-"
-
-# 4. Trigger identical rerun for the same batch date
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-01"}'
-
-# 5. Verify row counts remain strictly identical (zero duplicate rows)
-docker compose exec airflow-scheduler python -c "
-from pipeline.spark_session import get_spark_session
-spark = get_spark_session('idempotency_post')
-silver_cnt = spark.read.format('delta').load('data/silver/orders').filter(\"_batch_date = '2026-10-01'\").count()
-gold_cnt = spark.read.format('delta').load('data/gold/daily_revenue').filter(\"_batch_date = '2026-10-01'\").count()
-print(f'AFTER RERUN  -> Silver orders: {silver_cnt}, Gold daily revenue rows: {gold_cnt}')
-"
-```
-- **Expected Result:**
-  - `BEFORE RERUN` and `AFTER RERUN` report identical counts (e.g. `Silver orders: 4969, Gold daily revenue rows: 4`).
-  - Delta `replaceWhere = "_batch_date = '2026-10-01'"` replaces partitions atomically with zero duplicate records and zero data inflation.
-
----
-
-### Step 3: Single Failure Modes (`date_format`, `column_rename`, `null_spike`, `ambiguous_date`)
-Run each failure mode once on a distinct batch date to verify fail-fast behavior with NO retries, actionable logs, and incident recording in the Ops DB:
-```powershell
-# 3a. date_format (Silver FormatDriftError)
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=date_format --batch-date=2026-10-03
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-03"}'
-
-# 3b. column_rename (Silver MissingColumnError)
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=column_rename --batch-date=2026-10-04
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-04"}'
-
-# 3c. null_spike (DQ DataQualityError)
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=null_spike --batch-date=2026-10-05
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-05"}'
-
-# 3d. ambiguous_date (Silver FormatDriftError with ambiguous day/month)
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=ambiguous_date --batch-date=2026-10-06
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-06"}'
-
-# 3e. Verify incidents recorded in Ops DB
-docker compose exec airflow-scheduler python -c "
-from responder.repository import IncidentRepository
-repo = IncidentRepository()
-incidents = repo.get_open_incidents()
-for inc in incidents:
-    print(f\"ID: {inc['incident_id']} | Task: {inc['task_id']} | Batch: {inc['batch_date']} | Status: {inc['status']}\")
-"
-```
-- **Expected Result:**
-  - `date_format`: `silver_transform` fails immediately on try 1 (`FormatDriftError`, unparseable ratio ~5.2% > max 1.0%).
-  - `column_rename`: `silver_transform` fails immediately on try 1 (`MissingColumnError`, missing `amount`, found `total_amount`).
-  - `null_spike`: `data_quality_checks` fails on try 1 (`DataQualityError`, null rate > 25% on `customer_id`), blocking downstream `gold_build`.
-  - `ambiguous_date`: `silver_transform` fails on try 1 with ambiguous day/month dates recorded in column profiling.
-  - 4 distinct incidents are recorded in the `incidents` table with state `OPEN`.
-
----
-
-### Step 4: Run Agent on Each Incident via CLI (`responder/run_agent_once.py`)
-Execute the autonomous investigator on each open incident via the standalone CLI runner:
-```powershell
-# 4a. Run agent on date_format incident
-docker compose exec airflow-scheduler python -m responder.run_agent_once <DATE_FORMAT_INCIDENT_ID>
-
-# 4b. Run agent on column_rename incident
-docker compose exec airflow-scheduler python -m responder.run_agent_once <COLUMN_RENAME_INCIDENT_ID>
-
-# 4c. Run agent on null_spike incident
-docker compose exec airflow-scheduler python -m responder.run_agent_once <NULL_SPIKE_INCIDENT_ID>
-
-# 4d. Run agent on ambiguous_date incident
-docker compose exec airflow-scheduler python -m responder.run_agent_once <AMBIGUOUS_DATE_INCIDENT_ID>
-```
-- **Expected Result:**
-  - `date_format`: Proposes `append_unique` rule `%d/%m/%Y`. Citations verified verbatim. Sandbox runs 5 validation checks and passes. PR preview written to `data/pr_previews/<id>.md`. "PR ready" email dispatched.
-  - `column_rename`: Proposes alias rule (`total_amount -> amount`). Verbatim citations pass. Sandbox verifies. PR preview written and "PR ready" email dispatched.
-  - `null_spike`: Diagnoses `data_quality` root cause. Policy prohibits automated patch. Escalation email dispatched; no PR preview created.
-  - `ambiguous_date`: Agent checks column profile and flags `ambiguous_day_month_share > 0`. Ambiguity guardrail blocks patch. Escalation email dispatched.
-
----
-
-### Step 5: End-to-End `date_format` Resolution Flow
-Verify the complete lifecycle: review preview and email, apply patch, rerun batch, and verify resolution:
-```powershell
-# 1. Inspect generated PR preview
-Get-Content data/pr_previews/<DATE_FORMAT_INCIDENT_ID>.md
-
-# 2. Verify HTML notification email in Mailpit
-# Open browser at http://localhost:8025 to view formatted 'PR Ready' email
-
-# 3. Simulate human merge by applying rules patch to config/silver_rules.yml
-python -m responder.patcher --incident-id <DATE_FORMAT_INCIDENT_ID>
-
-# 4. Rerun the failed batch in Airflow
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-03"}'
-
-# 5. Verify the incident was automatically resolved by resolve_incidents
-docker compose exec airflow-scheduler python -c "
-from responder.repository import IncidentRepository
-repo = IncidentRepository()
-inc = repo.get_incident('<DATE_FORMAT_INCIDENT_ID>')
-print(f\"Incident status: {inc['status']}, resolution: {inc.get('resolution')}\")
-"
-```
-- **Expected Result:**
-  - `config/silver_rules.yml` updated with `%d/%m/%Y` using clean `ruamel.yaml` round-trip formatting.
-  - `silver_transform` succeeds on rerun.
-  - `resolve_incidents` marks incident `RESOLVED`.
-  - Gold tables populate with reconciled revenue for `2026-10-03`.
-
----
-
-### Step 6: Rebuild Streamlit Image & Monitor Live Run
-Rebuild the Streamlit container image to incorporate newly developed responder packages, then observe live stages updating in real time:
-```powershell
-# 1. Rebuild Streamlit image (required because responder was authored after Phase 1 build)
-docker compose build streamlit
-docker compose up -d streamlit
-
-# 2. Trigger a clean batch run
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=none --batch-date=2026-10-07
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-07"}'
-
-# 3. Open Streamlit Dashboard in browser:
-# Navigate to http://localhost:8501 -> 'Live Run Monitor'
-```
-- **Expected Result:**
-  - Streamlit loads successfully without import errors.
-  - Live Run Monitor auto-refreshes every 4 seconds (`st.fragment`).
-  - Status header displays `Running: <task> (try 1)` -> `Success: orders_medallion_daily`.
-  - Graphviz pipeline graph nodes transition in real-time from grey (queued) to blue (running) to green (success).
-  - Task Instances table, Errors tab, and structured Logs tab update dynamically.
-
----
-
-### Step 7: Unpause Autonomous Responder DAG & Watch Automatic Fix
-Unpause the `incident_responder` DAG to verify the fully automated detection and response loop:
-```powershell
-# 1. Unpause the autonomous responder DAG
+docker compose exec airflow-scheduler airflow dags unpause orders_medallion_daily
 docker compose exec airflow-scheduler airflow dags unpause incident_responder
-
-# 2. Inject date format failure on a new batch date
-docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=date_format --batch-date=2026-10-08
-docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{"batch_date": "2026-10-08"}'
-
-# 3. Observe incident_responder trigger automatically
-docker compose exec airflow-scheduler airflow dags list-runs incident_responder
 ```
-- **Expected Result:**
-  - `orders_medallion_daily` fails at `silver_transform`.
-  - Failure callback inserts an `OPEN` incident into Ops DB.
-  - `incident_responder` DAG detects the incident, runs through all 9 tasks (`claim_incident` -> `run_diagnosis_agent` -> `validate_diagnosis` -> `enforce_patch_policy` -> `run_sandbox_verification` -> `route_outcome` -> `open_fix_pull_request` -> `send_incident_email` -> `record_audit`).
-  - PR preview generated and email arrives in Mailpit inbox without manual intervention.
+
+### 2. Inject a failure and trigger the run
+
+```powershell
+docker compose exec airflow-scheduler python -m simulator.publish_batch --failure=date_format --batch-date=2026-10-08
+docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{\"batch_date\": \"2026-10-08\"}'
+```
+
+Use a date that has no incident yet. Other modes: `none`, `transient_error`, `missing_file`, `column_rename`, `null_spike`, `ambiguous_date`, `auth_error`.
+
+### 3. Expected behavior by mode
+
+| Mode | Expected (verified unless noted) |
+|---|---|
+| `date_format` | Silver fails on try 1, diagnosis `format_drift`, sandbox passes, PR preview and "PR ready" email |
+| `ambiguous_date` | Silver fails on try 1, policy blocks the patch, escalation email, no preview |
+| `column_rename` | Silver fails on try 1 (`MissingColumnError`), model escalates with evidence, no preview |
+| `null_spike` | Silver passes, `data_quality_checks` fails on try 1 (`max_null_rate:amount`), escalation as `data_quality` |
+| `transient_error` | `bronze_ingest` fails on try 1, succeeds on try 2, no incident |
+| `auth_error` | Not yet verified. Expected: fail fast, no retries |
+| `missing_file` | Not yet verified. Expected: sensor times out after about 2 minutes |
+
+### 4. Read the result
+
+```powershell
+docker compose exec ops-postgres psql -U ops_user -d ops -c "SELECT id, status, task_id, batch_date FROM incidents ORDER BY created_at DESC LIMIT 5;"
+docker compose exec ops-postgres psql -U ops_user -d ops -x -c "SELECT incident_id, final_action, diagnosis->>'root_cause_category' AS category, diagnosis->'patch' AS patch, diagnosis->>'escalation_reason' AS reason, sandbox_results FROM incident_diagnosis_audit ORDER BY created_at DESC LIMIT 1;"
+dir data\pr_previews
+```
+
+Then open Mailpit at http://localhost:8025. Each incident produces one `[AUTOFIX]` or `[ESCALATION]` email.
+
+### 5. Human approval and recovery (date_format only)
+
+```powershell
+docker compose exec airflow-scheduler python -m responder.patcher --incident-id <INCIDENT_ID>
+git diff config/silver_rules.yml
+docker compose exec airflow-scheduler airflow dags trigger orders_medallion_daily --conf '{\"batch_date\": \"2026-10-08\"}'
+```
+
+The diff must show one added line. The rerun takes about 6 to 8 minutes and all 7 tasks should turn green. Do not republish the file. Then check the incident is `RESOLVED`.
+
+### 6. Reset
+
+```powershell
+git restore config/silver_rules.yml
+docker compose exec airflow-scheduler airflow dags pause incident_responder
+docker compose exec airflow-scheduler airflow dags pause orders_medallion_daily
+```
+
+---
+
+## Remaining Work
+
+1. Re-check the Streamlit pages after the theme change (Live Run Monitor, Revenue Dashboard, Incident Audit). Fix blank charts and the stale red banner if they persist.
+2. Run `auth_error` and `missing_file`, or keep the claim at 5 of 7.
+3. Verify README, `docs/architecture.md` and `docs/runbook.md` against this file.
+4. Clean up the stray 2026-11-01 batch (dry-run first).
+5. Record a 2 to 3 minute demo, take README screenshots, check `.env` is untracked, push to GitHub.
+6. Add DeepEval evals (postponed). Write resume numbers only from measured results.
