@@ -15,6 +15,7 @@ except ImportError:
 from pipeline.config import get_project_root
 from pipeline.logging_config import get_logger
 from responder.agent import diagnose_incident
+from responder.alias_fallback import apply_alias_fallback
 from responder.audit import record_incident_audit
 from responder.notify import send_incident_email
 from responder.patcher import apply_patch_to_file
@@ -24,7 +25,6 @@ from responder.repository import OpsRepository
 from responder.sandbox import run_sandbox_verification
 from responder.schemas import IncidentDiagnosis
 from responder.validate import validate_diagnosis_schema
-
 logger = get_logger(__name__, dag_id="incident_responder")
 
 
@@ -47,6 +47,7 @@ def _claim_incident(**context: Any) -> str:
     )
     context["ti"].xcom_push(key="incident_id", value=inc_id)
     context["ti"].xcom_push(key="batch_date", value=claimed["batch_date"])
+    context["ti"].xcom_push(key="error_message", value=claimed.get("error_message"))
     return inc_id
 
 
@@ -57,6 +58,17 @@ def _run_diagnosis_agent(**context: Any) -> dict[str, Any]:
     try:
         diag = diagnose_incident(inc_id)
         diag_dict = diag.model_dump()
+        error_text = ti.xcom_pull(task_ids="claim_incident", key="error_message")
+        try:
+            import yaml
+
+            with open(get_project_root() / "config" / "silver_rules.yml", encoding="utf-8") as f:
+                rules = yaml.safe_load(f)
+            diag_dict, applied = apply_alias_fallback(diag_dict, error_text, rules)
+            if applied:
+                logger.info("Alias fallback proposed a patch for %s", inc_id)
+        except Exception as exc:
+            logger.error("Alias fallback skipped for %s: %s", inc_id, exc)
         ti.xcom_push(key="diagnosis", value=diag_dict)
         return diag_dict
     except Exception as exc:
