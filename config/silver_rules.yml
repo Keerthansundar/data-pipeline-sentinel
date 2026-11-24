@@ -12,7 +12,6 @@ orders:
     amount:
       - amount
 
-      - total_amount
   date_formats:
     order_date:
       - "%Y-%m-%d"
