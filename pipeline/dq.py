@@ -92,7 +92,8 @@ def run_dq_checks(
         q_count = 0
         quarantine_revenue = 0.0
 
-    aliases = orders_rules.get("column_aliases", {})
+    silver_rules = load_yaml_config("config/silver_rules.yml")
+    aliases = silver_rules.get("orders", {}).get("column_aliases", {})
     target_dq_cols = [
         c for c in max_null_rates if candidate_columns(c, bronze_orders.columns, aliases)
     ]
