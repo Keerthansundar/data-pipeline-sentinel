@@ -218,9 +218,28 @@ OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "required": ["tool_name", "quote"],
                         },
                     },
-                    "proposed_action": {"type": "string", "enum": ["rules_patch", "escalate"]},
+                    "proposed_action": {
+                        "type": "string",
+                        "enum": ["rules_patch", "escalate"],
+                        "description": (
+                            "Use 'rules_patch' when ONE allow-listed append_unique edit would fix the "
+                            "failure: (a) a new date format visible in sample_bad_values, or (b) a column "
+                            "rename where exactly one required column is missing and exactly one new, "
+                            "unrecognized column appears in 'Available columns'. Include the 'patch' object. "
+                            "Use 'escalate' for everything else (null spikes, missing files, auth errors, "
+                            "ambiguous dates, several columns changed)."
+                        ),
+                    },
                     "patch": {
                         "type": "object",
+                        "description": (
+                            "Required when proposed_action is 'rules_patch'. Omit when escalating. Examples: "
+                            "date drift -> {\"file\": \"config/silver_rules.yml\", \"operation\": \"append_unique\", "
+                            "\"key_path\": \"orders.date_formats.order_date\", \"value\": \"%d/%m/%Y\"}; "
+                            "column rename (missing 'amount', new column 'total_amount') -> "
+                            "{\"file\": \"config/silver_rules.yml\", \"operation\": \"append_unique\", "
+                            "\"key_path\": \"orders.column_aliases.amount\", \"value\": \"total_amount\"}."
+                        ),
                         "properties": {
                             "file": {
                                 "type": "string",
@@ -236,7 +255,8 @@ OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                                 "type": "string",
                                 "description": (
                                     "Target YAML key path. For date format drift use 'orders.date_formats.order_date'. "
-                                    "For column rename drift use 'orders.column_aliases.<canonical_column>'."
+                                    "For column rename drift use 'orders.column_aliases.<canonical_column>', where "
+                                    "<canonical_column> is the MISSING required column (e.g. 'amount')."
                                 ),
                             },
                             "value": {
@@ -244,14 +264,17 @@ OPENAI_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                                 "description": (
                                     "The proposed value as a plain string. For date format drift, a date-format "
                                     "string like '%d/%m/%Y' taken from sample_bad_values in error log. "
-                                    "For column rename drift, the new column name as a plain string. "
-                                    "Never use an object or dict."
+                                    "For column rename drift, the NEW column name from 'Available columns' "
+                                    "(e.g. 'total_amount'). Never use an object or dict."
                                 ),
                             },
                         },
                         "required": ["file", "operation", "key_path", "value"],
                     },
-                    "escalation_reason": {"type": "string"},
+                    "escalation_reason": {
+                        "type": "string",
+                        "description": "Only when proposed_action is 'escalate'. Omit it when proposing a patch.",
+                    },
                     "recommended_next_steps": {"type": "string"},
                 },
                 "required": [
