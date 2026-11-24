@@ -25,6 +25,7 @@ from responder.repository import OpsRepository
 from responder.sandbox import run_sandbox_verification
 from responder.schemas import IncidentDiagnosis
 from responder.validate import validate_diagnosis_schema
+
 logger = get_logger(__name__, dag_id="incident_responder")
 
 
@@ -60,6 +61,8 @@ def _run_diagnosis_agent(**context: Any) -> dict[str, Any]:
         diag_dict = diag.model_dump()
         error_text = ti.xcom_pull(task_ids="claim_incident", key="error_message")
         try:
+            if os.getenv("ALIAS_FALLBACK", "on").lower() == "off":
+                raise RuntimeError("alias fallback disabled by ALIAS_FALLBACK=off")
             import yaml
 
             with open(get_project_root() / "config" / "silver_rules.yml", encoding="utf-8") as f:
