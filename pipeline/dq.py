@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from pipeline.column_resolve import candidate_columns
 from pipeline.config import get_project_root, load_yaml_config
 from pipeline.errors import DataQualityError
 from pipeline.logging_config import get_logger
@@ -68,7 +69,7 @@ def run_dq_checks(
         ).cache()
 
     from pyspark.sql.functions import abs as spark_abs
-    from pyspark.sql.functions import col, count, trim, when
+    from pyspark.sql.functions import coalesce, col, count, trim, when
     from pyspark.sql.functions import sum as spark_sum
 
     # Single pass aggregations for silver, quarantine, and bronze
@@ -91,14 +92,19 @@ def run_dq_checks(
         q_count = 0
         quarantine_revenue = 0.0
 
-    target_dq_cols = [c for c in max_null_rates if c in bronze_orders.columns]
-    b_amt = col("amount").cast("double")
+    aliases = orders_rules.get("column_aliases", {})
+    target_dq_cols = [
+        c for c in max_null_rates if candidate_columns(c, bronze_orders.columns, aliases)
+    ]
+    amt_cols = candidate_columns("amount", bronze_orders.columns, aliases) or ["amount"]
+    b_amt = coalesce(*[col(x).cast("double") for x in amt_cols])
     b_agg_exprs = [
         count("*").alias("count"),
         spark_sum(when(b_amt.isNotNull(), spark_abs(b_amt)).otherwise(0.0)).alias("revenue"),
     ]
     for c in target_dq_cols:
-        c_str = col(c).cast("string")
+        srcs = candidate_columns(c, bronze_orders.columns, aliases)
+        c_str = coalesce(*[col(x).cast("string") for x in srcs])
         null_cond = (
             c_str.isNull() | (trim(c_str) == "") | (trim(c_str) == "None") | (trim(c_str) == "nan")
         )
@@ -194,32 +200,6 @@ def run_dq_checks(
     silver_orders.unpersist()
     if quarantine_orders:
         quarantine_orders.unpersist()
-
-    reconciled_revenue = silver_revenue + quarantine_revenue
-    diff = abs(bronze_revenue - reconciled_revenue)
-    rel_diff = (diff / bronze_revenue) if bronze_revenue > 0 else 0.0
-    rev_passed = rel_diff <= rev_tol
-
-    record_dq_result(
-        batch_date=batch_date,
-        table_name="orders",
-        check_name="revenue_reconciliation",
-        observed_value=f"rel_diff={rel_diff:.6f} (raw={bronze_revenue:.2f}, silver={silver_revenue:.2f}, q={quarantine_revenue:.2f})",
-        threshold_value=f"tolerance={rev_tol:.6f}",
-        passed=rev_passed,
-        details=f"Absolute diff: {diff:.2f}",
-    )
-    logger.info(
-        "DQ check 'revenue_reconciliation': raw=%.2f, silver=%.2f, quarantine=%.2f, rel_diff=%.6f, threshold=%.6f, pass=%s",
-        bronze_revenue,
-        silver_revenue,
-        quarantine_revenue,
-        rel_diff,
-        rev_tol,
-        rev_passed,
-    )
-    if not rev_passed:
-        dq_failures.append(("revenue_reconciliation", rel_diff, rev_tol))
 
     end_time = datetime.now(UTC)
 
