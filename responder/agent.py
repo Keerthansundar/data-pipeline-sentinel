@@ -297,6 +297,19 @@ def diagnose_incident(
         if raw_submitted_diagnosis is not None:
             break
 
+
+        if step_count >= 5:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"You have used {step_count} of {max_tool_calls} tool calls. "
+                        "Do not call any more read tools. Call submit_incident_diagnosis "
+                        "now with the evidence you already have."
+                    ),
+                }
+            )
+
     # 4. Check for loop limit exhaustion
     if raw_submitted_diagnosis is None:
         logger.warning(

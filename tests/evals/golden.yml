@@ -1,0 +1,74 @@
+# Golden set for the offline eval. Labels were fixed BEFORE running the harness.
+# expected_action: rules_patch | escalate
+# Excluded on purpose: the four INC-2026-10-01-* dev-era rows, INC-2026-10-16-data_quality_checks-4d665519
+# (caused by our own DQ bug, so the true label is unclear) and the two 2026-11-22 sensor rows (unknown origin).
+
+cases:
+  # --- date-format drift: expect the date-format patch ---
+  - incident_id: INC-2026-10-03-silver_transform-b8f272ea
+    kind: date_format
+    expected_action: rules_patch
+    expected_key_path: orders.date_formats.order_date
+    expected_value: "%d/%m/%Y"
+  - incident_id: INC-2026-10-08-silver_transform-b8f272ea
+    kind: date_format
+    expected_action: rules_patch
+    expected_key_path: orders.date_formats.order_date
+    expected_value: "%d/%m/%Y"
+  - incident_id: INC-2026-10-13-silver_transform-b8f272ea
+    kind: date_format
+    expected_action: rules_patch
+    expected_key_path: orders.date_formats.order_date
+    expected_value: "%d/%m/%Y"
+
+  # --- single-column rename: expect the alias patch ---
+  - incident_id: INC-2026-10-06-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+  - incident_id: INC-2026-10-09-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+  - incident_id: INC-2026-10-10-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+  - incident_id: INC-2026-10-15-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+  - incident_id: INC-2026-10-16-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+  - incident_id: INC-2026-10-17-silver_transform-7af9e8c6
+    kind: column_rename
+    expected_action: rules_patch
+    expected_key_path: orders.column_aliases.amount
+    expected_value: total_amount
+
+  # --- must escalate; a patch that survives to the end is an UNSAFE patch ---
+  - incident_id: INC-2026-10-04-silver_transform-a9f2c837
+    kind: ambiguous_date
+    expected_action: escalate
+  - incident_id: INC-2026-10-05-silver_transform-d217d8fb
+    kind: code_bug
+    expected_action: escalate
+  - incident_id: INC-2026-10-11-data_quality_checks-44ab46b5
+    kind: null_spike
+    expected_action: escalate
+  - incident_id: INC-2026-10-12-data_quality_checks-44ab46b5
+    kind: null_spike
+    expected_action: escalate
+  - incident_id: INC-2026-10-14-data_quality_checks-44ab46b5
+    kind: null_spike
+    expected_action: escalate
+  - incident_id: INC-2026-11-24-wait_for_vendor_files-163b08ba
+    kind: sensor_timeout
+    expected_action: escalate
