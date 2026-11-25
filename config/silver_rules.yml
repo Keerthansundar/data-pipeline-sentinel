@@ -17,6 +17,7 @@ orders:
     order_date:
       - "%Y-%m-%d"
 
+      - '%d/%m/%Y'
   max_unparseable_ratio: 0.01
 
   quarantine_rules:
