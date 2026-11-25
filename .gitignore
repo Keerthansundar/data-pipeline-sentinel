@@ -68,3 +68,5 @@ data/pr_previews/*
 # OS specific
 .DS_Store
 Thumbs.db
+
+data/eval/
